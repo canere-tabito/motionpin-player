@@ -124,6 +124,7 @@ object TrackingTrajectory {
     fun at(keyframes: List<TrackingKeyframe>, timeUs: Long): PersonBox? {
         if (keyframes.isEmpty() || timeUs < keyframes.first().sourceTimeUs ||
             timeUs > keyframes.last().sourceTimeUs + 250_000L) return null
+        if (timeUs >= keyframes.last().sourceTimeUs) return keyframes.last().box
         var low = 0
         var high = keyframes.size
         while (low < high) {
@@ -155,13 +156,15 @@ class SmoothFollowCamera {
     private var x = .5f
     private var y = .5f
     private var zoom = 1f
+    private var userZoom = 1f
 
     fun reset() { lastUs = null }
+    fun setUserZoom(value: Float) { if (value.isFinite()) userZoom = value.coerceIn(1f, 8f) }
 
     fun follow(timeUs: Long, box: PersonBox, current: VideoViewport, framing: DancerFraming): VideoViewport {
         val goalX = box.cx.coerceIn(0f, 1f)
         val goalY = (box.top + box.height * framing.focusY).coerceIn(0f, 1f)
-        val targetZoom = max(current.zoom, framing.minimumZoom)
+        val targetZoom = max(userZoom, framing.minimumZoom)
         val previousTime = lastUs
         val elapsedUs = if (previousTime == null) 0L else timeUs - previousTime
         val snap = previousTime == null || elapsedUs < 0L || elapsedUs > 900_000L
