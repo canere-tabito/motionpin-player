@@ -12,6 +12,14 @@ of that part. Execution results belong in [VALIDATION_REPORT.md](../VALIDATION_R
 `PASS`, `FAIL` or `NOT_RUN`; the device cases below are `NOT_RUN` until actual evidence is recorded.
 The test procedure is [DEVICE_VALIDATION.md](DEVICE_VALIDATION.md).
 
+## New viewer features added after the initial validation (source inventory, 2026-10-16)
+
+- Dancer tracking (P1): MediaPipe Tasks Vision 1.1.0, deterministic build-time SHA-256-checked EfficientDet-Lite0 detector, manually selected person bounding box, small downscaled local source-frame samples, geometry/color-based conservative re-association, bounded lookahead and normalized viewport interpolation. Source unchanged, offline runtime. CODE PRESENT; actual Android model loading, multi-dancer crossing, portrait rotation and thermal/4K60 performance are **NOT_RUN**. Lost identity is not automatically reassigned.
+- Instant replay (P1): original and AI-cached source-time 3-second clipping with repeat and restore. CODE PRESENT; actual player/clip boundary, cache seek and control preservation tests are **NOT_RUN**.
+- Favorite scene reels (P1): persistent scene pin references in versioned bounded settings, manual reorder, shuffle, repeat and Media3 clip-end handoff across videos. CODE PRESENT; cross-video device tests, process restart/backup restoration and empty/deleted pin handling are **NOT_RUN**.
+- Model retrieval is restricted to the local build and is NOT proof the new model or native dependency was downloaded, linked, loaded or licensed on a physical Android device.
+- Existing validation report predates these changes. Do not represent the source additions as already built into a signed APK.
+
 ## Separate media acceptance gates
 
 | Gate | Current implementation | Acceptance status / remaining work |
