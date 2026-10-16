@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.caneretabito.motionpin.MotionRuntime
 import com.caneretabito.motionpin.data.*
 import com.caneretabito.motionpin.player.*
+import com.caneretabito.motionpin.tracking.DancerTracker
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,6 +26,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = runtime.repository
     val ai = runtime.ai
     val player = RetainedPlayer(application, viewModelScope)
+    val tracking = DancerTracker(application, viewModelScope)
+    private var continueAfterTargetSelection = false
     val videos = repository.videos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val pins = repository.pins.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val channels = repository.channels.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -57,6 +61,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { savePlaybackPosition() }.onFailure { message.value = "続きの位置を保存できませんでした。${it.message ?: ""}" }
             }
         }
+        viewModelScope.launch {
+            player.state.collect { playing ->
+                val current = currentVideo.value ?: return@collect
+                val updated = tracking.viewportAt(current.id, playing.sourcePositionUs, playing.viewport)
+                if (updated != null && (abs(updated.centerX - playing.viewport.centerX) > .003f ||
+                            abs(updated.centerY - playing.viewport.centerY) > .003f ||
+                            abs(updated.zoom - playing.viewport.zoom) > .003f)) player.setViewport(updated)
+                tracking.maybeExtend(current, playing.sourcePositionUs)
+            }
+        }
         refresh()
     }
 
@@ -64,6 +78,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun importVideo(uri: Uri) = operation("動画を確認しています…") { repository.importVideo(uri); message.value = "動画をライブラリに追加しました。" }
     fun notify(text: String) { message.value = text }
     fun dismissMessage() { message.value = null }
+
+    fun requestDancerTracking() {
+        val video = currentVideo.value ?: return
+        continueAfterTargetSelection = player.exo.isPlaying
+        player.pause()
+        tracking.requestSelection(video, player.state.value.sourcePositionUs)
+    }
+    fun selectDancerTarget(index: Int) {
+        val video = currentVideo.value ?: return
+        tracking.select(video, index)
+        if (continueAfterTargetSelection) player.exo.play()
+        continueAfterTargetSelection = false
+    }
+    fun stopDancerTracking() {
+        tracking.stop()
+        if (continueAfterTargetSelection && currentVideo.value != null) player.exo.play()
+        continueAfterTargetSelection = false
+    }
 
     fun openVideo(video: VideoEntity) = open(video, null, preferAi = false)
     fun openPin(pin: PinEntity, preferAi: Boolean = true) {
@@ -82,6 +114,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             busy.value = "動画と端末の再生能力を確認しています…"
             try {
                 savePlaybackPosition()
+                if (currentVideo.value?.id != video.id) tracking.stop()
                 player.pause()
                 if (video.needsRelink || video.uri.isBlank()) error("この動画には再関連付けが必要です。ライブラリの「再関連付け」から元動画を選択してください。")
                 val job = pin?.aiJobId?.let { repository.getJob(it) }
@@ -146,6 +179,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closePlayer() {
+        tracking.stop()
         fullscreen.value = false
         cancelPlaybackTransition()
         player.pause()
@@ -260,7 +294,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         catch (e: Exception) { message.value = e.message ?: "処理に失敗しました。もう一度お試しください。" }
         finally { if (label != null) busy.value = null }
     }
-    override fun onCleared() { player.release(); ai.setPlaybackActive(false) }
+    override fun onCleared() { tracking.stop(); player.release(); ai.setPlaybackActive(false) }
 }
 
 fun speedFraction(speed: Float): Pair<Long, Long> = when (speed) {
