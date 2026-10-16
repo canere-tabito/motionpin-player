@@ -215,7 +215,14 @@ private fun PlaybackControls(model: MainViewModel, state: PlaybackState, pin: Pi
     val lower = pin?.takeIf { it.endUs != null }?.startUs ?: 0L
     val upper = (pin?.endUs ?: state.durationUs).coerceAtLeast(lower + 1)
     var dragging by remember { mutableStateOf<Float?>(null) }
+    val reel by model.activeReel.collectAsStateWithLifecycle()
     Column {
+        reel?.let { active -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${active.reelName} · ${active.index + 1}/${active.order.size}", color = Champagne,
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = { model.nextReelScene(); interact() }) { Text("次のシーン") }
+            TextButton(onClick = { model.stopReel(); interact() }) { Text("リール終了") }
+        } }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(formatTimestamp(dragging?.toLong() ?: state.sourcePositionUs, true), style = MaterialTheme.typography.bodySmall, color = Ivory)
             Text(if (state.cached) "AI ${state.requestedSpeed}× · 再生速度 1× · ミュート" else "元動画 · ${state.requestedSpeed}×", color = Champagne, style = MaterialTheme.typography.bodySmall)
