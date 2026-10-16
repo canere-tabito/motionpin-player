@@ -159,6 +159,12 @@ class SmoothFollowCamera {
     private var userZoom = 1f
 
     fun reset() { lastUs = null }
+    fun resumeFrom(viewport: VideoViewport, sourceTimeUs: Long) {
+        x = viewport.centerX.coerceIn(0f, 1f)
+        y = viewport.centerY.coerceIn(0f, 1f)
+        zoom = viewport.zoom.coerceIn(1f, 8f)
+        lastUs = sourceTimeUs
+    }
     fun setUserZoom(value: Float) { if (value.isFinite()) userZoom = value.coerceIn(1f, 8f) }
 
     fun follow(timeUs: Long, box: PersonBox, current: VideoViewport, framing: DancerFraming): VideoViewport {
