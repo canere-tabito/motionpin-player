@@ -225,6 +225,7 @@ private fun VideoSurface(model: MainViewModel, state: PlaybackState, modifier: M
                     model.tracking.setManualHold(true)
                 val transform = viewportTransform(size.width.toFloat(), size.height.toFloat(), current.aspect, current.fill, current.viewport)
                 val next = current.viewport.copy(zoom = (current.viewport.zoom * zoom).coerceIn(1f, 8f))
+                if (zoom !in .985f..1.015f) model.tracking.setUserZoom(next.zoom)
                 model.player.setViewport(if (next.zoom > 1f) next.pan(pan.x, pan.y, transform.baseWidth, transform.baseHeight) else VideoViewport())
                 interaction()
             }
