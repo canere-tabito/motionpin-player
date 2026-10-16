@@ -57,6 +57,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
     private var preferredQuality = TrackerQuality.HIGH
     private var preferredFraming = DancerFraming.FULL
     @Volatile private var previewCorrection = 0
+    @Volatile private var playbackUnderPressure = false
     private val chunkUs = 6_000_000L
     private val aheadThresholdUs = 3_000_000L
     private val maxAnchors = 2400
@@ -68,6 +69,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         matcher = null
         camera.reset()
         previewCorrection = 0
+        playbackUnderPressure = false
         _state.value = DancerTrackingState()
     }
 
@@ -142,6 +144,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
     /** Playback always takes priority over initiating the next analysis batch. */
     fun maybeExtend(video: VideoEntity, sourceUs: Long,
                     playbackIsPlaying: Boolean = false, overloaded: Boolean = false) {
+        playbackUnderPressure = playbackIsPlaying && overloaded
         val current = _state.value
         if (current.videoId != video.id || current.phase != "active" || work?.isActive == true) return
         if (current.keyframes.isNotEmpty() && sourceUs < current.keyframes.first().sourceTimeUs - 250_000L) {
@@ -173,6 +176,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
                 var time = last.sourceTimeUs + step
                 var samples = 0
                 var successes = 0
+                var throttled = false
                 val anchors = ArrayList<TrackingKeyframe>()
                 _state.update { it.copy(phase = "scanning", message = "選んだダンサーを先読み解析中…") }
                 fun publish(atUs: Long, done: Boolean = false) {
@@ -220,16 +224,24 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
                                 return@withDetector
                             }
                             if (samples >= 2) publish(time)
+                            if (playbackUnderPressure) {
+                                throttled = true
+                                publish(time)
+                                return@withDetector
+                            }
                             time += step
                         }
                     }
                 }
                 ensureActiveToken(token)
                 if (_state.value.phase != "lost") {
-                    publish(min(time - step, stopAt), true)
+                    publish(if (throttled) time else min(time - step, stopAt), !throttled)
                     _state.update { it.copy(phase = "active",
-                        message = if (successes == 0) "人物が見えない区間です。再選択してください。"
-                                  else "先読み完了 · ${successes} 箇所の動きを追尾しました。") }
+                        message = when {
+                            throttled -> "4K動画の再生を優先し、追尾の先読みを一時停止しました。"
+                            successes == 0 -> "人物が見えない区間です。再選択してください。"
+                            else -> "先読み完了 · ${successes} 箇所の動きを追尾しました。"
+                        }) }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
