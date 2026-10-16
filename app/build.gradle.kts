@@ -51,6 +51,8 @@ android {
             version = "3.22.1"
         }
     }
+    // MediaPipe must load the checked offline model directly from the APK assets.
+    androidResources { noCompress += "tflite" }
     packaging {
         jniLibs { useLegacyPackaging = false }
         resources.merges += setOf("META-INF/AL2.0", "META-INF/LGPL2.1")
@@ -102,3 +104,6 @@ val prepareTrackerModel by tasks.registering(Exec::class) {
     commandLine("bash", rootProject.file("scripts/setup-tracker-model.sh").absolutePath)
 }
 tasks.named("preBuild") { dependsOn(prepareTrackerModel) }
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(prepareTrackerModel)
+}
