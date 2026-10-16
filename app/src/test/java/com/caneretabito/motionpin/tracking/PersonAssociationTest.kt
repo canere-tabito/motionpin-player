@@ -17,7 +17,7 @@ class PersonAssociationTest {
 
     @Test fun ambiguityDoesNotSilentlySwapDancers() {
         val original = box(.20f, .20f)
-        assertNull(PersonAssociation.choose(original, listOf(box(.21f, .20f), box(.22f, .20f))))
+        assertNull(PersonAssociation.choose(original, listOf(box(.210f, .20f), box(.212f, .20f))))
     }
 
     @Test fun missingPersonMustBeExplicit() {
