@@ -130,6 +130,11 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
     }
 
     fun setUserZoom(zoom: Float) { camera.setUserZoom(zoom) }
+    fun resumeFromManual(view: VideoViewport, timeUs: Long) {
+        camera.resumeFrom(view, timeUs)
+        _state.update { it.copy(manualHold = false,
+            message = "ゆっくりダンサーの位置へ戻ります。") }
+    }
 
     fun setFraming(framing: DancerFraming) {
         preferredFraming = framing
