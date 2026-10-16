@@ -43,6 +43,7 @@ import kotlinx.coroutines.delay
 fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>) {
     val state by model.player.state.collectAsStateWithLifecycle()
     val fullscreen by model.fullscreen.collectAsStateWithLifecycle()
+    val tracking by model.tracking.state.collectAsStateWithLifecycle()
     val selectedPin by model.currentPin.collectAsStateWithLifecycle()
     val inspection by model.inspection.collectAsStateWithLifecycle()
     val jobs by model.jobs.collectAsStateWithLifecycle()
@@ -61,7 +62,9 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
         }
         if (!immersive) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen)
+                PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen,
+                    tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id,
+                    { if (tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id) model.stopDancerTracking() else model.requestDancerTracking() })
                 VideoSurface(model, state, Modifier.fillMaxWidth().aspectRatio(state.aspect.coerceAtLeast(.3f)), { hud = !hud }, interact)
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                     PlaybackControls(model, state, selectedPin, compact = false, interact = interact,
@@ -79,7 +82,9 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
             VideoSurface(model, state, Modifier.fillMaxSize(), { hud = !hud }, interact)
             if (hud) {
                 Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .8f), Color.Transparent))).statusBarsPadding()) {
-                    PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen)
+                    PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen,
+                    tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id,
+                    { if (tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id) model.stopDancerTracking() else model.requestDancerTracking() })
                 }
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
@@ -100,11 +105,20 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                     .background(Color.Black.copy(alpha = .45f), RoundedCornerShape(24.dp))) { Icon(Icons.Default.MoreHoriz, "再生コントロールを表示", tint = Ivory) }
             }
         }
+        if (tracking.videoId == video.id && tracking.phase in setOf("scanning", "active", "lost") && hud) {
+            Surface(Modifier.align(Alignment.TopCenter).padding(top = if (immersive) 78.dp else 4.dp)
+                .widthIn(max = 320.dp), color = Graphite.copy(alpha = .9f), shape = RoundedCornerShape(16.dp)) {
+                Text(tracking.message, Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.bodySmall, color = Champagne)
+            }
+        }
         if (state.buffering) CircularProgressIndicator(Modifier.align(Alignment.Center).size(40.dp))
         state.error?.let { error -> Surface(Modifier.align(Alignment.Center).padding(24.dp), color = Graphite, shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(20.dp)) { Text("再生を停止しました", style = MaterialTheme.typography.titleLarge); Text(error, Modifier.padding(vertical = 12.dp)); TextButton(onClick = { model.player.clearError(); model.closePlayer() }) { Text("ライブラリに戻る") } }
         } }
     }
+    if (tracking.videoId == video.id && tracking.phase == "choosing")
+        DancerSelectionDialog(tracking, model::selectDancerTarget, model::stopDancerTracking)
     if (tools) PlayerTools(model, state, { tools = false; interact() }, { diagnostics = true })
     if (diagnostics) DiagnosticsDialog(inspection, state) { diagnostics = false }
     if (pinSheet) ModalBottomSheet(onDismissRequest = { pinSheet = false }, containerColor = Obsidian) {
@@ -119,12 +133,18 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
 
 @Composable
 private fun PlayerHeader(video: VideoEntity, onBack: () -> Unit, onDiagnostics: () -> Unit,
-                         fullscreen: Boolean, onFullscreen: () -> Unit) {
+                         fullscreen: Boolean, onFullscreen: () -> Unit, trackingActive: Boolean,
+                         onTracking: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack, Modifier.size(48.dp)) { Icon(Icons.Default.ArrowBack, "ライブラリに戻る") }
         Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
             Text("NOW PLAYING", color = Champagne, style = MaterialTheme.typography.labelSmall)
             Text(video.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+        }
+        IconButton(onClick = onTracking, Modifier.size(48.dp)) {
+            Icon(if (trackingActive) Icons.Default.CenterFocusWeak else Icons.Default.CenterFocusStrong,
+                if (trackingActive) "ダンサー追尾を解除" else "ダンサーを選んで自動追尾",
+                tint = if (trackingActive) Champagne else Ivory)
         }
         IconButton(onClick = onFullscreen, Modifier.size(48.dp)) {
             Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
