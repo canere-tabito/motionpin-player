@@ -150,6 +150,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         camera.reset()
         _state.value = snapshot.copy(phase = "scanning", preview = null, candidates = emptyList(),
             keyframes = listOf(TrackingKeyframe(anchorTime, chosen)), inspectedFrames = 1,
+            matchedFrames = 1,
             message = "追尾する人物を確認して数秒先まで解析中…")
         analyzeAhead(video, token)
     }
