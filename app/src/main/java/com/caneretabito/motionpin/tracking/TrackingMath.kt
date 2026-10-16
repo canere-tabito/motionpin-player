@@ -21,7 +21,7 @@ data class PersonBox(
     fun contains(x: Float, y: Float) = x in left..right && y in top..bottom
     fun valid() = listOf(left, top, right, bottom, confidence).all { it.isFinite() } &&
         left >= 0f && top >= 0f && right <= 1f && bottom <= 1f &&
-        width > .012f && height > .026f && confidence in .25f..1f
+        width > .012f && height > .026f && confidence in .20f..1f
 }
 
 data class TrackingKeyframe(val sourceTimeUs: Long, val box: PersonBox)
