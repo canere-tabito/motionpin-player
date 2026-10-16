@@ -230,6 +230,8 @@ private fun PinsScreen(pins: List<PinEntity>, videos: List<VideoEntity>, jobs: L
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var delete by remember { mutableStateOf<PinEntity?>(null) }
+    var reelPin by remember { mutableStateOf<PinEntity?>(null) }
+    var showReels by remember { mutableStateOf(false) }
     val byVideo = remember(videos) { videos.associateBy { it.id } }
     val byJob = remember(jobs) { jobs.associateBy { it.id } }
     val visible = remember(pins, filter, query, jobs) { pins.filter { pin ->
@@ -237,6 +239,13 @@ private fun PinsScreen(pins: List<PinEntity>, videos: List<VideoEntity>, jobs: L
             (pin.title.contains(query, true) || pin.note.contains(query, true) || byVideo[pin.videoId]?.displayName?.contains(query, true) == true)
     }.sortedByDescending { it.updatedAt } }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("シーンを好きな順番で鑑賞", Modifier.weight(1f), color = Muted)
+            FilledTonalButton(onClick = { showReels = true }, Modifier.heightIn(min = 48.dp)) {
+                Icon(Icons.Default.PlaylistPlay, null)
+                Text(" シーンリール")
+            }
+        } }
         item { OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("ピン・動画・メモを検索") }, leadingIcon = { Icon(Icons.Default.Search, null) }, shape = RoundedCornerShape(16.dp)) }
         item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(4) { index -> FilterChip(filter == index, { filter = index }, label = { Text(listOf("すべて", "時刻", "区間", "AI済み")[index]) }, modifier = Modifier.heightIn(min = 48.dp)) } } }
         val activeJobs = jobs.filter { it.status != JobStatus.COMPLETED }
@@ -245,16 +254,20 @@ private fun PinsScreen(pins: List<PinEntity>, videos: List<VideoEntity>, jobs: L
         if (visible.isEmpty()) item { EmptyState("大切な瞬間を、ここに", "再生画面のピンをタップすると、そのまま時刻を保存。区間を選べば、繰り返しやAIスローも楽しめます。") }
         items(visible, key = { it.id }, contentType = { "pin" }) { pin ->
             PinCard(pin, byVideo[pin.videoId]?.displayName ?: "再関連付けが必要な動画", byJob[pin.aiJobId],
-                onPlay = { model.openPin(pin) }, onEdit = { model.editor.value = pin }, onAi = { model.enqueue(pin) }, onDelete = { delete = pin })
+                onPlay = { model.openPin(pin) }, onEdit = { model.editor.value = pin }, onAi = { model.enqueue(pin) },
+                onDelete = { delete = pin }, onAddToReel = { reelPin = pin })
         }
     }
+    if (showReels) SceneReelsSheet(model) { showReels = false }
+    reelPin?.let { pin -> ReelPickerDialog(model, pin) { reelPin = null } }
     delete?.let { pin -> AlertDialog(onDismissRequest = { delete = null }, title = { Text("このピンを削除しますか？") },
         text = { Text("${pin.title}\n元動画は変更されません。") }, confirmButton = { TextButton(onClick = { model.deletePin(pin); delete = null }) { Text("ピンを削除") } },
         dismissButton = { TextButton(onClick = { delete = null }) { Text("キャンセル") } }) }
 }
 
 @Composable
-fun PinCard(pin: PinEntity, videoName: String, job: AiJobEntity?, onPlay: () -> Unit, onEdit: () -> Unit, onAi: () -> Unit, onDelete: () -> Unit) {
+fun PinCard(pin: PinEntity, videoName: String, job: AiJobEntity?, onPlay: () -> Unit, onEdit: () -> Unit,
+            onAi: () -> Unit, onDelete: () -> Unit, onAddToReel: (() -> Unit)? = null) {
     var menu by remember { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(16.dp), color = Graphite) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -267,6 +280,8 @@ fun PinCard(pin: PinEntity, videoName: String, job: AiJobEntity?, onPlay: () -> 
                 IconButton(onClick = { menu = true }, Modifier.size(48.dp)) { Icon(Icons.Default.MoreVert, "${pin.title} の操作") }
                 DropdownMenu(menu, { menu = false }) {
                     DropdownMenuItem(text = { Text("編集") }, onClick = { menu = false; onEdit() })
+                    if (pin.endUs != null && onAddToReel != null)
+                        DropdownMenuItem(text = { Text("リールに追加") }, onClick = { menu = false; onAddToReel() })
                     DropdownMenuItem(text = { Text("削除") }, onClick = { menu = false; onDelete() })
                 }
             }
