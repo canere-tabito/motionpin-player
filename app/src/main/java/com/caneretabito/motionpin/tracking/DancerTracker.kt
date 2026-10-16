@@ -51,142 +51,203 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
     private val _state = MutableStateFlow(DancerTrackingState())
     val state = _state.asStateFlow()
     private var work: Job? = null
-    private var generation = 0L
-
-    private val stepUs = 500_000L // 2 detection samples/s: interpolate camera motion between anchors
-    private val chunkUs = 25_000_000L
-    private val aheadThresholdUs = 7_000_000L
+    @Volatile private var generation = 0L
+    private var matcher: StablePersonMatcher? = null
+    private val camera = SmoothFollowCamera()
+    private var preferredQuality = TrackerQuality.HIGH
+    private var preferredFraming = DancerFraming.FULL
+    @Volatile private var previewCorrection = 0
+    private val chunkUs = 6_000_000L
+    private val aheadThresholdUs = 3_000_000L
+    private val maxAnchors = 2400
 
     fun stop() {
         generation++
         work?.cancel()
         work = null
+        matcher = null
+        camera.reset()
+        previewCorrection = 0
         _state.value = DancerTrackingState()
     }
 
-    fun requestSelection(video: VideoEntity, sourceUs: Long) {
+    fun requestSelection(video: VideoEntity, sourceUs: Long, rotation: Int = 0) {
         stop()
+        previewCorrection = ((rotation % 360) + 360) % 360
         val token = generation
-        val position = sourceUs.coerceIn(0L, (video.durationUs - 1).coerceAtLeast(0L))
-        _state.value = DancerTrackingState("scanning", video.id, message = "人物を検出しています…")
+        val position = sourceUs.coerceIn(0L, (video.durationUs - 1L).coerceAtLeast(0L))
+        _state.value = DancerTrackingState("scanning", video.id,
+            quality = preferredQuality, framing = preferredFraming,
+            rotationCorrectionDegrees = previewCorrection,
+            message = "人物を検出中。端末内だけで解析しています…")
         work = scope.launch(Dispatchers.IO) {
             try {
                 val frame = frameAt(video, position)
-                val people = withDetector { detect(it, frame) }
+                val people = try { withDetector(preferredQuality) { detect(it, frame) } }
+                    catch (e: Exception) { frame.recycle(); throw e }
                 ensureActiveToken(token)
-                _state.value = DancerTrackingState("choosing", video.id, preview = frame,
-                    candidates = people, analyzedUntilUs = position,
-                    message = if (people.isEmpty()) "人物を検出できませんでした。別の時刻で試してください。" else "追尾したい人物をタップしてください")
+                _state.update { current ->
+                    if (current.videoId != video.id) current else current.copy(
+                        phase = "choosing", preview = frame, candidates = people,
+                        analyzedUntilUs = position,
+                        message = if (people.isEmpty()) "人物を検出できません。別の時刻や軽快モードで試してください。"
+                        else "追尾する人物を枠または番号で選択してください")
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (e: Exception) {
-                if (token == generation) _state.value = DancerTrackingState("lost", video.id,
-                    message = "人物検出を開始できません: ${e.message ?: e.javaClass.simpleName}")
-            } finally {
-                if (token == generation) work = null
-            }
+                if (token == generation) _state.update { it.copy(phase = "lost",
+                    message = "人物検出を開始できません: ${e.message ?: e.javaClass.simpleName}") }
+            } finally { if (token == generation) work = null }
         }
+    }
+
+    fun changeQuality(video: VideoEntity, timeUs: Long, quality: TrackerQuality) {
+        preferredQuality = quality
+        requestSelection(video, timeUs, _state.value.rotationCorrectionDegrees)
+    }
+
+    fun rotatePreview(video: VideoEntity, sourceUs: Long) {
+        requestSelection(video, sourceUs, (_state.value.rotationCorrectionDegrees + 90) % 360)
+    }
+
+    fun setFraming(framing: DancerFraming) {
+        preferredFraming = framing
+        _state.update { it.copy(framing = framing) }
+    }
+
+    fun setManualHold(hold: Boolean) {
+        _state.update { it.copy(manualHold = hold,
+            message = if (hold) "追尾の画面移動を一時固定しました。" else "追尾の画面移動を再開しました。") }
+        if (!hold) camera.reset()
     }
 
     fun select(video: VideoEntity, index: Int) {
         val snapshot = _state.value
         if (snapshot.phase != "choosing" || snapshot.videoId != video.id) return
-        val chosen = snapshot.candidates.getOrNull(index) ?: return
+        val chosen = snapshot.candidates.getOrNull(index)?.takeIf { it.valid() } ?: return
         val anchorTime = snapshot.analyzedUntilUs
         generation++
         val token = generation
         work?.cancel()
-        _state.value = DancerTrackingState("scanning", video.id,
-            keyframes = listOf(TrackingKeyframe(anchorTime, chosen)), analyzedUntilUs = anchorTime,
-            message = "選んだ人物の動きを解析しています…")
+        matcher = StablePersonMatcher(chosen, anchorTime)
+        camera.reset()
+        _state.value = snapshot.copy(phase = "scanning", preview = null, candidates = emptyList(),
+            keyframes = listOf(TrackingKeyframe(anchorTime, chosen)), inspectedFrames = 1,
+            message = "追尾する人物を確認して数秒先まで解析中…")
         analyzeAhead(video, token)
     }
 
-    fun maybeExtend(video: VideoEntity, sourceUs: Long) {
+    /** Playback always takes priority over initiating the next analysis batch. */
+    fun maybeExtend(video: VideoEntity, sourceUs: Long,
+                    playbackIsPlaying: Boolean = false, overloaded: Boolean = false) {
         val current = _state.value
         if (current.videoId != video.id || current.phase != "active" || work?.isActive == true) return
-        if (sourceUs < current.analyzedUntilUs - aheadThresholdUs) return
-        if (current.analyzedUntilUs >= video.durationUs - 1) return
+        if (current.keyframes.isNotEmpty() && sourceUs < current.keyframes.first().sourceTimeUs - 250_000L) {
+            _state.update { it.copy(message = "追尾できる時間より前へ移動しました。人物を再選択してください。") }
+            return
+        }
+        if (sourceUs < current.analyzedUntilUs - aheadThresholdUs ||
+            current.analyzedUntilUs >= video.durationUs - 1L) return
+        if (playbackIsPlaying && overloaded) {
+            _state.update { it.copy(message = "動画の滑らかさを優先して追尾解析を待機中。一時停止すると先読みできます。") }
+            return
+        }
         analyzeAhead(video, generation)
     }
 
     private fun analyzeAhead(video: VideoEntity, token: Long) {
         work = scope.launch(Dispatchers.IO) {
             try {
-                val old = _state.value
-                if (old.videoId != video.id || old.keyframes.isEmpty() || old.phase == "lost") return@launch
-                val last = old.keyframes.last()
-                val stopAt = min(video.durationUs - 1, last.sourceTimeUs + chunkUs)
-                _state.value = old.copy(phase = "scanning", message = "追尾範囲を解析中…")
-                val appended = ArrayList<TrackingKeyframe>()
-                var time = last.sourceTimeUs + stepUs
-                var previous = last.box
-                var missed = 0
-                withDetector { detector ->
+                val initial = _state.value
+                val identity = matcher ?: return@launch
+                if (initial.videoId != video.id || initial.keyframes.isEmpty() || initial.phase == "lost") return@launch
+                val last = initial.keyframes.last()
+                val step = initial.quality.stepUs
+                val stopAt = min(video.durationUs - 1L, last.sourceTimeUs + chunkUs)
+                if (stopAt <= last.sourceTimeUs) {
+                    _state.update { it.copy(phase = "active", message = "動画末尾まで追尾解析しました。") }
+                    return@launch
+                }
+                var time = last.sourceTimeUs + step
+                var samples = 0
+                var successes = 0
+                val anchors = ArrayList<TrackingKeyframe>()
+                _state.update { it.copy(phase = "scanning", message = "選んだダンサーを先読み解析中…") }
+                fun publish(atUs: Long, done: Boolean = false) {
+                    ensureActiveToken(token)
+                    val additions = anchors.toList()
+                    _state.update { latest ->
+                        if (latest.videoId != video.id || latest.phase == "lost") latest
+                        else {
+                            val updated = (latest.keyframes + additions).takeLast(maxAnchors)
+                            val sufficient = updated.size >= 4
+                            latest.copy(
+                                phase = if (sufficient || done) "active" else "scanning",
+                                keyframes = updated,
+                                analyzedUntilUs = max(latest.analyzedUntilUs, atUs),
+                                inspectedFrames = latest.inspectedFrames + samples,
+                                message = when {
+                                    !sufficient -> "追尾対象を確認中…"
+                                    done -> "数秒先まで追尾準備完了"
+                                    else -> "追尾可能 · ${updated.size} 点の位置を解析済み"
+                                })
+                        }
+                    }
+                    anchors.clear()
+                    samples = 0
+                }
+                withDetector(initial.quality) { detector ->
                     MediaMetadataRetriever().use { retriever ->
                         retriever.setDataSource(context, Uri.parse(video.uri))
                         while (time <= stopAt) {
                             ensureActiveToken(token)
-                            val bitmap = loadFrame(retriever, video, time)
-                            val next = bitmap?.let { bmp ->
-                                val boxes = detect(detector, bmp)
-                                bmp.recycle()
-                                PersonAssociation.choose(previous, boxes)
+                            val frame = loadFrame(retriever, video, time)
+                            val people = if (frame == null) emptyList() else try {
+                                detect(detector, frame)
+                            } finally { frame.recycle() }
+                            val outcome = identity.step(time, people)
+                            samples++
+                            if (outcome.status == MatchStatus.MATCHED) {
+                                anchors += TrackingKeyframe(time, checkNotNull(outcome.box))
+                                successes++
                             }
-                            if (next == null) {
-                                if (++missed >= 2) {
-                                    ensureActiveToken(token)
-                                    _state.value = _state.value.copy(phase = "lost",
-                                        keyframes = _state.value.keyframes + appended,
-                                        analyzedUntilUs = time,
-                                        message = "人物を見失いました。別の人物へ自動で切り替えず、再選択が必要です。")
-                                    return@withDetector
-                                }
-                            } else {
-                                missed = 0
-                                previous = next
-                                appended += TrackingKeyframe(time, next)
+                            if (outcome.status == MatchStatus.LOST) {
+                                publish(time)
+                                _state.update { it.copy(phase = "lost",
+                                    message = "人物の識別が曖昧になりました。別人へ飛ばさず追尾を停止。再選択できます。") }
+                                return@withDetector
                             }
-                            time += stepUs
+                            if (samples >= 2) publish(time)
+                            time += step
                         }
                     }
                 }
                 ensureActiveToken(token)
                 if (_state.value.phase != "lost") {
-                    val anchors = _state.value.keyframes + appended
-                    _state.value = _state.value.copy(phase = "active", keyframes = anchors,
-                        analyzedUntilUs = stopAt,
-                        message = if (stopAt >= video.durationUs - 1) "動画の最後まで追尾を解析しました" else "ダンサーを追尾中")
+                    publish(min(time - step, stopAt), true)
+                    _state.update { it.copy(phase = "active",
+                        message = if (successes == 0) "人物が見えない区間です。再選択してください。"
+                                  else "先読み完了 · ${successes} 箇所の動きを追尾しました。") }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (e: Exception) {
-                if (token == generation) _state.value = _state.value.copy(phase = "lost",
-                    message = "追尾解析を停止しました: ${e.message ?: e.javaClass.simpleName}")
-            } finally {
-                if (token == generation) work = null
-            }
+            catch (error: Exception) {
+                if (token == generation) _state.update { it.copy(phase = "lost",
+                    message = "追尾解析を停止しました: ${error.message ?: error.javaClass.simpleName}") }
+            } finally { if (token == generation) work = null }
         }
     }
 
-    /** Smoothly move only viewport center; keep user-selected zoom, playback codec and color unchanged. */
     fun viewportAt(videoId: String, timeUs: Long, current: VideoViewport): VideoViewport? {
-        val s = _state.value
-        if (s.videoId != videoId || s.phase !in setOf("scanning", "active") || s.keyframes.isEmpty()) return null
-        val frames = s.keyframes
-        if (timeUs < frames.first().sourceTimeUs || timeUs > frames.last().sourceTimeUs + stepUs) return null
-        val nextIndex = frames.indexOfFirst { it.sourceTimeUs >= timeUs }
-        val next = when { nextIndex < 0 -> frames.last(); else -> frames[nextIndex] }
-        val prev = if (nextIndex <= 0) next else frames[nextIndex - 1]
-        val factor = if (next.sourceTimeUs == prev.sourceTimeUs) 0f else
-            ((timeUs - prev.sourceTimeUs).toDouble() / (next.sourceTimeUs - prev.sourceTimeUs)).toFloat().coerceIn(0f, 1f)
-        val x = prev.box.cx + (next.box.cx - prev.box.cx) * factor
-        val y = prev.box.cy + (next.box.cy - prev.box.cy) * factor
-        return current.copy(zoom = max(1.8f, current.zoom), centerX = x.coerceIn(0f, 1f), centerY = y.coerceIn(0f, 1f))
+        val currentState = _state.value
+        if (currentState.videoId != videoId || currentState.manualHold ||
+            currentState.phase !in setOf("scanning", "active", "lost")) return null
+        val box = TrackingTrajectory.at(currentState.keyframes, timeUs) ?: return null
+        return camera.follow(timeUs, box, current, currentState.framing)
     }
 
     private fun ensureActiveToken(token: Long) {
-        // Synchronous detector/retriever callbacks cannot call suspending functions.
-        // stop()/new selection increments generation; always check at each sampled frame.
-        if (token != generation) throw CancellationException("Tracking selection replaced")
+        if (token != generation || Thread.currentThread().isInterrupted)
+            throw CancellationException("Tracking selection changed")
     }
 
     private fun frameAt(video: VideoEntity, timeUs: Long): Bitmap =
@@ -213,17 +274,21 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         }
         // The *analysis thumbnail only* is converted for the RGB8 model.
         // Original video frames, HDR metadata and SurfaceView playback are untouched.
-        if (oriented.config == Bitmap.Config.ARGB_8888) return oriented
-        val compatible = oriented.copy(Bitmap.Config.ARGB_8888, false)
+        val angle = previewCorrection
+        val displayed = if (angle == 0) oriented else Bitmap.createBitmap(oriented, 0, 0,
+            oriented.width, oriented.height, Matrix().apply { postRotate(angle.toFloat()) }, true)
+            .also { if (it !== oriented) oriented.recycle() }
+        if (displayed.config == Bitmap.Config.ARGB_8888) return displayed
+        val compatible = displayed.copy(Bitmap.Config.ARGB_8888, false)
             ?: error("端末で追尾用のARGB_8888フレームを生成できません")
-        oriented.recycle()
+        displayed.recycle()
         return compatible
     }
 
-    private fun <T> withDetector(block: (ObjectDetector) -> T): T {
+    private fun <T> withDetector(quality: TrackerQuality, block: (ObjectDetector) -> T): T {
         val options = ObjectDetector.ObjectDetectorOptions.builder()
             .setBaseOptions(BaseOptions.builder()
-                .setModelAssetPath("models/tracker/efficientdet_lite0.tflite").build())
+                .setModelAssetPath(quality.modelFile).build())
             .setRunningMode(RunningMode.IMAGE)
             .setCategoryAllowlist(listOf("person"))
             .setMaxResults(12)
