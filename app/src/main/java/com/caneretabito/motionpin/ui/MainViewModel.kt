@@ -18,9 +18,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+data class ReelPlayback(val reelId: String, val reelName: String, val order: List<String>,
+                        val index: Int = 0, val repeat: Boolean = true)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val runtime = MotionRuntime.get(application)
     val repository = runtime.repository
@@ -33,6 +38,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val channels = repository.channels.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val channelVideos = repository.channelVideos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val jobs = repository.jobs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val reels = repository.settings.map { values ->
+        runCatching { SceneReelCodec.decode(values.firstOrNull { it.key == SceneReelCodec.SETTINGS_KEY }?.value) }
+            .getOrDefault(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val activeReel = MutableStateFlow<ReelPlayback?>(null)
+    private val reelMutex = Mutex()
+    private var reelAdvancing = false
     val libraryState = repository.libraryState
     val currentVideo = MutableStateFlow<VideoEntity?>(null)
     val fullscreen = MutableStateFlow(false)
@@ -69,6 +81,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             abs(updated.centerY - playing.viewport.centerY) > .003f ||
                             abs(updated.zoom - playing.viewport.zoom) > .003f)) player.setViewport(updated)
                 tracking.maybeExtend(current, playing.sourcePositionUs)
+                if (!playing.ended) reelAdvancing = false
+                else if (activeReel.value != null && !reelAdvancing) {
+                    reelAdvancing = true
+                    advanceReel()
+                }
             }
         }
         refresh()
@@ -97,8 +114,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         continueAfterTargetSelection = false
     }
 
-    fun openVideo(video: VideoEntity) = open(video, null, preferAi = false)
+    fun openVideo(video: VideoEntity) {
+        stopReel()
+        open(video, null, preferAi = false)
+    }
     fun openPin(pin: PinEntity, preferAi: Boolean = true) {
+        stopReel()
         cancelPlaybackTransition()
         openJob = viewModelScope.launch {
             val video = repository.getVideo(pin.videoId)
@@ -179,6 +200,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closePlayer() {
+        stopReel()
         tracking.stop()
         fullscreen.value = false
         cancelPlaybackTransition()
@@ -188,7 +210,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun cancelPlaybackTransition() { openJob?.cancel(); playJob?.cancel() }
 
-    fun toggleInstantReplay() { if (currentVideo.value != null) player.toggleInstantReplay() }
+    fun toggleInstantReplay() {
+        if (currentVideo.value == null) return
+        if (activeReel.value != null) stopReel()
+        player.toggleInstantReplay()
+    }
 
     fun playPause() {
         cancelPlaybackTransition()
@@ -239,6 +265,97 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             speedNumerator = speedFraction(state.requestedSpeed).first, speedDenominator = speedFraction(state.requestedSpeed).second,
             loop = true, zoomScale = state.viewport.zoom, zoomCenterX = state.viewport.centerX, zoomCenterY = state.viewport.centerY,
             audioMode = if (state.muted) "muted" else "original")
+    }
+
+
+    private fun updateReels(transform: (List<SceneReel>) -> List<SceneReel>): Job = operation {
+        reelMutex.withLock {
+            // Read the transaction input from Room, rather than an asynchronously collected UI snapshot.
+            val saved = SceneReelCodec.decode(repository.getSetting(SceneReelCodec.SETTINGS_KEY))
+            val updated = transform(saved)
+            repository.setSetting(SceneReelCodec.SETTINGS_KEY, SceneReelCodec.encode(updated))
+        }
+    }
+    fun createReel(name: String) = updateReels { old ->
+        val title = name.trim()
+        require(title.isNotEmpty()) { "リール名を入力してください" }
+        old + SceneReel(name = title.take(100))
+    }
+    fun deleteReel(reelId: String) = updateReels { old -> old.filterNot { it.id == reelId } }
+    fun addSceneToReel(reelId: String, pinId: String): Job = operation {
+        val pin = repository.getPin(pinId)
+        require(pin?.endUs != null) { "区間ピンだけをシーンリールに追加できます" }
+        reelMutex.withLock {
+            val old = SceneReelCodec.decode(repository.getSetting(SceneReelCodec.SETTINGS_KEY))
+            val updated = old.map {
+                if (it.id == reelId && pinId !in it.pinIds) it.copy(pinIds = it.pinIds + pinId) else it
+            }
+            require(old.any { it.id == reelId }) { "リールが見つかりません" }
+            repository.setSetting(SceneReelCodec.SETTINGS_KEY, SceneReelCodec.encode(updated))
+        }
+    }
+    fun removeSceneFromReel(reelId: String, pinId: String) = updateReels { old ->
+        old.map { if (it.id == reelId) it.copy(pinIds = it.pinIds.filterNot { id -> id == pinId }) else it }
+    }
+    fun moveReelScene(reelId: String, index: Int, step: Int) = updateReels { old ->
+        old.map { reel ->
+            if (reel.id != reelId) reel else {
+                val dest = index + step
+                if (index !in reel.pinIds.indices || dest !in reel.pinIds.indices) reel else {
+                    val ids = reel.pinIds.toMutableList()
+                    val item = ids.removeAt(index)
+                    ids.add(dest, item)
+                    reel.copy(pinIds = ids)
+                }
+            }
+        }
+    }
+    fun changeReelPlayback(reelId: String, shuffle: Boolean? = null, repeat: Boolean? = null) = updateReels { old ->
+        old.map { if (it.id == reelId) it.copy(shuffle = shuffle ?: it.shuffle, repeat = repeat ?: it.repeat) else it }
+    }
+    fun stopReel() { activeReel.value = null; reelAdvancing = false }
+    fun playSceneReel(reelId: String): Job = operation {
+        val reel = SceneReelCodec.decode(repository.getSetting(SceneReelCodec.SETTINGS_KEY))
+            .firstOrNull { it.id == reelId } ?: error("リールが見つかりません")
+        val valid = reel.pinIds.filter { repository.getPin(it)?.endUs != null }
+        require(valid.isNotEmpty()) { "再生できる区間ピンがありません" }
+        stopReel()
+        val order = if (reel.shuffle) valid.shuffled() else valid
+        val playback = ReelPlayback(reel.id, reel.name, order, repeat = reel.repeat)
+        activeReel.value = playback
+        playReelItem(playback)
+    }
+    private suspend fun playReelItem(playback: ReelPlayback) {
+        val pin = repository.getPin(playback.order[playback.index])
+        val video = pin?.let { repository.getVideo(it.videoId) }
+        if (pin?.endUs == null || video == null) {
+            advanceReel()
+            return
+        }
+        // Force repeat off for every clip; ExoPlayer's STATE_ENDED drives the next scene.
+        open(video, pin, preferAi = false, loopOverride = false)
+    }
+    fun nextReelScene() {
+        if (activeReel.value == null || reelAdvancing) return
+        reelAdvancing = true
+        advanceReel()
+    }
+    private fun advanceReel() {
+        viewModelScope.launch {
+            val current = activeReel.value ?: return@launch
+            var next = current.index + 1
+            if (next >= current.order.size) {
+                if (!current.repeat) {
+                    stopReel()
+                    message.value = "シーンリールの再生が完了しました"
+                    return@launch
+                }
+                next = 0
+            }
+            val updated = current.copy(index = next)
+            activeReel.value = updated
+            playReelItem(updated)
+        }
     }
 
     fun savePin(pin: PinEntity) = operation {
