@@ -189,8 +189,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun chooseDancerFraming(framing: DancerFraming) { tracking.setFraming(framing) }
     fun holdDancerTracking() {
         val current = tracking.state.value
-        if (current.phase in setOf("active", "scanning"))
-            tracking.setManualHold(!current.manualHold)
+        if (current.phase in setOf("active", "scanning")) {
+            if (current.manualHold) tracking.resumeFromManual(player.state.value.viewport, player.liveSourcePositionUs())
+            else tracking.setManualHold(true)
+        }
     }
 
     fun selectDancerTarget(index: Int) {
