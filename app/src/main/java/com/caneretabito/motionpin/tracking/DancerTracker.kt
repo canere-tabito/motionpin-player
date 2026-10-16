@@ -15,8 +15,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -219,8 +217,9 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         return current.copy(zoom = max(1.8f, current.zoom), centerX = x.coerceIn(0f, 1f), centerY = y.coerceIn(0f, 1f))
     }
 
-    private suspend fun ensureActiveToken(token: Long) {
-        currentCoroutineContext().ensureActive()
+    private fun ensureActiveToken(token: Long) {
+        // Synchronous detector/retriever callbacks cannot call suspending functions.
+        // stop()/new selection increments generation; always check at each sampled frame.
         if (token != generation) throw CancellationException("Tracking selection replaced")
     }
 
