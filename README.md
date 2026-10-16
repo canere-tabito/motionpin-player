@@ -9,6 +9,9 @@
 ## 実装
 
 - Media3 ExoPlayerとSurfaceViewで元動画を再生。FIT/FILL、速度、ピンチズーム、正規化した表示位置、区間クリップ／ループ。
+- ダンサー自動追尾（試験実装）：画面の人物から対象をタップし、端末内のEfficientDet-Lite0検出と近接／色特徴による保守的な紐付けで表示中心を更新。追尾が曖昧なら停止し、元動画は不変。
+- 直前3秒のワンタップ区間ループ（元動画・AIキャッシュ双方）と解除時の再生復帰。
+- お気に入りシーンリール：複数動画の区間ピンを順番に再生し、並べ替え／シャッフル／リピート、設定JSONバックアップ対応。
 - 「動画」「ピン」「コレクション」。MediaStoreとローカルSAF、動画の検索／並べ替え、時刻・区間ピン、手動チャンネル。
 - Roomに内部UUIDと元動画のµs時刻を保存。明示JSONバックアップ、入力検査、競合検出、再インポートの重複防止、元動画の再関連付け。
 - 同梱RIFE v4.6をJNI／ncnn Vulkanから実行する区間補間。0.5×／0.25×、60fps出力、音声ミュート、元サイズのままストリーム処理。
@@ -22,6 +25,15 @@ OSの自動バックアップを無効化しています。OEM独自の移行動
 
 AI補間と再エンコードは完全無劣化ではありません。出力属性の一致だけで見た目の品質を保証しません。
 HDR AIは成立していないため拒否します。P010／Main10能力の調査と、モデル適合・中間面・動的メタデータのゲートを分離しています。
+
+## 追加した鑑賞機能の使い方（実機未検証）
+
+- 再生画面の照準アイコン → 映像上の黄色い人物枠から1人選択 → 位置を先読み解析して、約1.8倍以上のズーム中心を移動。見失う／交差する場合は再選択。処理は動画端末内で完結。
+- 再生操作の「直前3秒リプレイ」を押すと直前の数秒だけを繰り返し、もう一度押すと元の再生範囲へ戻ります。
+- 「ピン」タブの「シーンリール」で作成し、各区間ピンのメニューから追加。順番変更・シャッフル・ループ再生が可能です。
+
+追尾は人物同一性の保証・被写体が隠れた際の再識別・4K60の同時性能を保証しません。MediaPipe検出は縮小した参照画像に限定され、再生中の4K/HDR映像やAIキャッシュの画質を変更しません。
+モデル取得方法と許諾は [TRACKING_MODEL.md](docs/TRACKING_MODEL.md) を参照。モデルはローカルAPKビルド時に署名検証ではなくSHA-256照合して取り込み、アプリ実行時は完全オフラインです。
 
 ## 使い方
 
@@ -39,6 +51,7 @@ HDR AIは成立していないため拒否します。P010／Main10能力の調�
 
 ```sh
 scripts/setup-native.sh
+scripts/setup-tracker-model.sh # Gradle preBuildからも実行・hash検証
 scripts/build-local.sh testDebugUnitTest lintRelease assembleRelease
 python3 scripts/verify-artifact.py app/build/outputs/apk/release/app-release-unsigned.apk \
   --mode build --sdk "$ANDROID_HOME" --model-manifest MODEL_MANIFEST.json
@@ -56,4 +69,4 @@ releaseビルドにはdebug鍵へのフォールバックがありません。�
 - [実機検証手順](docs/DEVICE_VALIDATION.md)：4K60、継続再生、AI、HDR、復元、取消、16KBの独立したゲート。
 - [実装要件](docs/IMPLEMENTATION_REQUIREMENTS.md) と [レビュー](docs/REVIEW_SUMMARY.md)：対象範囲と正式完成の条件。
 
-P1の高度なシーンプレイリスト、スマートチャンネル、字幕／音声track切替、PiP、リアルタイムAIは正式対応を宣言していません。
+簡易シーンリールは実装しましたが、高度なシーンプレイリスト編集、スマートチャンネル、字幕／音声track切替、PiP、リアルタイムAIは正式対応を宣言していません。
