@@ -28,8 +28,19 @@ class TrackingQualityTest {
         val match = StablePersonMatcher(person(.2f), 0)
         assertEquals(MatchStatus.MISSING, match.step(250_000, emptyList()).status)
         assertEquals(MatchStatus.MISSING, match.step(500_000, emptyList()).status)
-        assertEquals(MatchStatus.LOST, match.step(750_000, listOf(person(.95f, w = .03f))).status)
-        assertEquals(MatchStatus.LOST, match.step(1_000_000, listOf(person(.2f))).status)
+        assertEquals(MatchStatus.MISSING, match.step(750_000, listOf(person(.95f, w = .03f))).status)
+        assertEquals(MatchStatus.MISSING, match.step(1_000_000, emptyList()).status)
+        assertEquals(MatchStatus.LOST, match.step(1_250_000, emptyList()).status)
+        assertEquals(MatchStatus.LOST, match.step(1_500_000, listOf(person(.2f))).status)
+    }
+
+    @Test fun shortOcclusionCanRecoverWithoutInventingCameraPositions() {
+        val tracker = StablePersonMatcher(person(.2f), 0)
+        assertEquals(MatchStatus.MISSING, tracker.step(250_000, emptyList()).status)
+        assertEquals(MatchStatus.MATCHED, tracker.step(500_000, listOf(person(.23f))).status)
+        val frames = listOf(TrackingKeyframe(0, person(.2f)),
+            TrackingKeyframe(750_000L, person(.3f)))
+        assertNull(TrackingTrajectory.at(frames, 300_000L, 500_000L))
     }
 
     @Test fun mismatchedCostumeIsNotAValidRecovery() {
