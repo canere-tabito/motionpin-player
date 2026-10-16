@@ -8,7 +8,7 @@ class FrameEtaEstimatorTest {
         val estimator = FrameEtaEstimator()
         assertNull(estimator.observe(1, 100, 1000))
         assertNull(estimator.observe(4, 100, 1500))
-        assertEquals(19000L, estimator.observe(5, 100, 2000))
+        assertEquals(23750L, estimator.observe(5, 100, 2000))
     }
 
     @Test fun progressRestartInvalidatesOldRate() {
