@@ -77,6 +77,23 @@ class TrackingQualityTest {
         assertEquals(.74f, jump.centerX, .0001f)
     }
 
+    @Test fun fullBodyPresetDoesNotCropTallDancer() {
+        val tall = person(.25f, y = .05f, w = .3f, h = .90f)
+        val cam = SmoothFollowCamera()
+        cam.setUserZoom(3f)
+        val result = cam.follow(0, tall, VideoViewport(zoom = 3f), DancerFraming.FULL)
+        assertEquals(1f, result.zoom, .0001f)
+    }
+
+    @Test fun upperFramingCanZoomWithoutMovingWrongDancer() {
+        val p = person(.25f, y = .15f)
+        val cam = SmoothFollowCamera()
+        val full = cam.follow(0L, p, VideoViewport(), DancerFraming.FULL)
+        val focus = cam.follow(250_000L, p, full, DancerFraming.UPPER)
+        assertTrue(focus.centerY < full.centerY)
+        assertTrue(focus.zoom > full.zoom)
+    }
+
     @Test fun framingTargetsDifferentPartsOfTheSamePerson() {
         val body = person(.2f, y = .1f)
         val full = SmoothFollowCamera().follow(0L, body, VideoViewport(), DancerFraming.FULL)
