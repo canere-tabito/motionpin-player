@@ -1,6 +1,8 @@
 package com.caneretabito.motionpin
 
 import android.Manifest
+import android.content.pm.ActivityInfo
+import androidx.core.view.WindowInsetsCompat
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val model: MainViewModel by viewModels()
+    private var originalOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private val permission = MutableStateFlow("未許可")
     private var pendingRelinkId: String? = null
     private var documentPurpose = "video"
@@ -53,6 +56,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        originalOrientation = savedInstanceState?.getInt("originalOrientation") ?: requestedOrientation
         documentPurpose = savedInstanceState?.getString("documentPurpose") ?: "video"
         pendingRelinkId = savedInstanceState?.getString("pendingRelinkId")
         notificationRequested = savedInstanceState?.getBoolean("notificationRequested") ?: false
@@ -61,6 +65,25 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false
         }
         updatePermission()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                combine(model.fullscreen, model.currentVideo) { enabled, video -> (enabled && video != null) to video }
+                    .collect { (enabled, video) ->
+                        val controller = WindowCompat.getInsetsController(window, window.decorView)
+                        if (enabled && video != null) {
+                            controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                            controller.hide(WindowInsetsCompat.Type.systemBars())
+                            val width = if (video.rotationDegrees % 180 == 0) video.width else video.height
+                            val height = if (video.rotationDegrees % 180 == 0) video.height else video.width
+                            val target = if (width >= height) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            if (requestedOrientation != target) requestedOrientation = target
+                        } else {
+                            controller.show(WindowInsetsCompat.Type.systemBars())
+                            if (requestedOrientation != originalOrientation) requestedOrientation = originalOrientation
+                        }
+                    }
+            }
+        }
         setContent {
             MotionPinApp(model, permission,
                 onGrant = ::requestVideoPermission,
@@ -96,6 +119,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("originalOrientation", originalOrientation)
         outState.putString("documentPurpose", documentPurpose)
         outState.putString("pendingRelinkId", pendingRelinkId)
         outState.putBoolean("notificationRequested", notificationRequested)
