@@ -2,6 +2,15 @@ MotionPin third-party notices
 =============================
 
 Native components and bundled model:
+- Google MediaPipe Tasks Vision 1.1.0 (Tasks Core and transitive components):
+  Apache License 2.0. https://github.com/google-ai-edge/mediapipe
+  On-device multi-person object detection; no user media is transmitted.
+- Google EfficientDet-Lite0 float32 v1, COCO person detector model:
+  Apache License 2.0. Official model distribution:
+  https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite
+  SHA-256 40338edf5ec70d43e318b0a716a84d4564cd1802759a7a07170c7e43796dbf58.
+  See docs/TRACKING_MODEL.md. The model is downloaded only during a verified local
+  build and bundled in the APK; never fetched when the application runs.
 - nihui/rife-ncnn-vulkan a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7:
   MIT, Copyright (c) 2020 nihui. Includes exact repository-committed RIFE v4.6
   flownet.param/flownet.bin, Warp custom layer and Vulkan shaders. See
