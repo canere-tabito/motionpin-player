@@ -81,7 +81,7 @@ class StablePersonMatcher(seed: PersonBox, startUs: Long) {
             missingCount++
             if (missingStartedUs == null) missingStartedUs = timeUs
             // Allow a short gap, but NEVER jump to a near-tied dancer.
-            if (missingCount >= 3 || timeUs - (missingStartedUs ?: timeUs) >= 1_500_000L) {
+            if (missingCount >= 5 || timeUs - (missingStartedUs ?: timeUs) >= 1_250_000L) {
                 permanentlyLost = true
                 return IdentityMatch(MatchStatus.LOST)
             }
@@ -121,7 +121,7 @@ enum class DancerFraming(val label: String, val focusY: Float, val minimumZoom: 
 
 object TrackingTrajectory {
     /** Never extrapolate more than 250ms outside actually validated detections. */
-    fun at(keyframes: List<TrackingKeyframe>, timeUs: Long): PersonBox? {
+    fun at(keyframes: List<TrackingKeyframe>, timeUs: Long, maxGapUs: Long = 900_000L): PersonBox? {
         if (keyframes.isEmpty() || timeUs < keyframes.first().sourceTimeUs ||
             timeUs > keyframes.last().sourceTimeUs + 250_000L) return null
         if (timeUs >= keyframes.last().sourceTimeUs) return keyframes.last().box
@@ -134,7 +134,7 @@ object TrackingTrajectory {
         val right = keyframes.getOrElse(low) { keyframes.last() }
         val left = if (low == 0) right else keyframes[low - 1]
         val distance = right.sourceTimeUs - left.sourceTimeUs
-        if (distance > 900_000L) return null // An occluded gap must not be smoothly faked over.
+        if (distance > maxGapUs) return null // An occluded gap must not be smoothly faked over.
         val weight = if (distance == 0L) 0f else
             ((timeUs - left.sourceTimeUs).toDouble() / distance).toFloat().coerceIn(0f, 1f)
         fun blend(a: Float, b: Float) = a + (b - a) * weight
