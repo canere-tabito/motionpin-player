@@ -239,11 +239,13 @@ private fun PlaybackControls(model: MainViewModel, state: PlaybackState, pin: Pi
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = { model.player.setLoop(!state.loop); interact() }) { Icon(Icons.Default.Repeat, null, tint = if (state.loop) Champagne else Muted); Text(if (state.loop) "ループ中" else "ループ") }
+                TextButton(onClick = { model.toggleInstantReplay(); interact() }) { Text(if (state.replay) "リプレイ終了" else "直前3秒リプレイ") }
                 TextButton(onClick = onPins) { Text("ピン一覧") }
                 if (pin?.aiJobId != null) TextButton(onClick = { model.compareSourceCache(); interact() }) { Text(if (state.cached) "同じ時刻の元動画" else "同じ時刻のAI") }
             }
         } else {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { model.toggleInstantReplay(); interact() }) { Text(if (state.replay) "リプレイ終了" else "直前3秒リプレイ") }
                 TextButton(onClick = onPins) { Text("ピン一覧") }
                 if (pin?.aiJobId != null) TextButton(onClick = { model.compareSourceCache(); interact() }) { Text(if (state.cached) "元動画へ" else "AIへ") }
                 Text("${if (state.fill) "FILL" else "FIT"} · ズーム ${"%.1f".format(state.viewport.zoom)}×", modifier = Modifier.padding(14.dp), color = Muted, style = MaterialTheme.typography.bodySmall)
