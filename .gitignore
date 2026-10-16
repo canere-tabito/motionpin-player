@@ -12,3 +12,6 @@ captures/
 third_party/
 artifacts/
 __pycache__/
+
+# Build-time downloaded, hash-pinned offline person detector (never fetch at runtime)
+/app/src/main/assets/models/tracker/*.tflite
