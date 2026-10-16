@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>) {
     val state by model.player.state.collectAsStateWithLifecycle()
+    val fullscreen by model.fullscreen.collectAsStateWithLifecycle()
     val selectedPin by model.currentPin.collectAsStateWithLifecycle()
     val inspection by model.inspection.collectAsStateWithLifecycle()
     val jobs by model.jobs.collectAsStateWithLifecycle()
@@ -54,13 +55,13 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val landscape = maxWidth > maxHeight
         val verticalVideo = state.aspect < 1f
-        val immersive = landscape || verticalVideo
+        val immersive = fullscreen || landscape || verticalVideo
         LaunchedEffect(hud, state.isPlaying, interaction, immersive) {
             if (immersive && hud && state.isPlaying && !tools && !diagnostics && !pinSheet) { delay(4_000); hud = false }
         }
         if (!immersive) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                PlayerHeader(video, model::closePlayer, { diagnostics = true })
+                PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen)
                 VideoSurface(model, state, Modifier.fillMaxWidth().aspectRatio(state.aspect.coerceAtLeast(.3f)), { hud = !hud }, interact)
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                     PlaybackControls(model, state, selectedPin, compact = false, interact = interact,
@@ -78,7 +79,7 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
             VideoSurface(model, state, Modifier.fillMaxSize(), { hud = !hud }, interact)
             if (hud) {
                 Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .8f), Color.Transparent))).statusBarsPadding()) {
-                    PlayerHeader(video, model::closePlayer, { diagnostics = true })
+                    PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen)
                 }
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
@@ -117,12 +118,17 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
 }
 
 @Composable
-private fun PlayerHeader(video: VideoEntity, onBack: () -> Unit, onDiagnostics: () -> Unit) {
+private fun PlayerHeader(video: VideoEntity, onBack: () -> Unit, onDiagnostics: () -> Unit,
+                         fullscreen: Boolean, onFullscreen: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack, Modifier.size(48.dp)) { Icon(Icons.Default.ArrowBack, "ライブラリに戻る") }
         Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
             Text("NOW PLAYING", color = Champagne, style = MaterialTheme.typography.labelSmall)
             Text(video.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+        }
+        IconButton(onClick = onFullscreen, Modifier.size(48.dp)) {
+            Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                if (fullscreen) "全画面固定を解除" else "全画面固定", tint = if (fullscreen) Champagne else Ivory)
         }
         IconButton(onClick = onDiagnostics, Modifier.size(48.dp)) { Icon(Icons.Default.Info, "再生能力とdecoderの診断") }
     }
