@@ -25,10 +25,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 data class ReelPlayback(val reelId: String, val reelName: String, val order: List<String>,
                         val index: Int = 0, val repeat: Boolean = true)
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val runtime = MotionRuntime.get(application)
     val repository = runtime.repository
