@@ -1,0 +1,670 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "8c73d77207aaead639d1fa171d4dc879",
+    "entities": [
+      {
+        "tableName": "videos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `uri` TEXT NOT NULL, `displayName` TEXT NOT NULL, `durationUs` INTEGER NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `rotationDegrees` INTEGER NOT NULL, `mimeType` TEXT NOT NULL, `folder` TEXT NOT NULL, `sizeBytes` INTEGER NOT NULL, `modifiedSeconds` INTEGER NOT NULL, `frameRateNumerator` INTEGER NOT NULL, `frameRateDenominator` INTEGER NOT NULL, `availability` TEXT NOT NULL, `fingerprintSha256` TEXT, `revision` INTEGER NOT NULL, `resumePositionUs` INTEGER NOT NULL, `lastPlayedAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `bitDepth` INTEGER, `colorTransfer` INTEGER, `colorStandard` INTEGER, `colorRange` INTEGER, `codecProfile` INTEGER, `mediaStoreId` INTEGER, `needsRelink` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uri",
+            "columnName": "uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationUs",
+            "columnName": "durationUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rotationDegrees",
+            "columnName": "rotationDegrees",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "folder",
+            "columnName": "folder",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "sizeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedSeconds",
+            "columnName": "modifiedSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frameRateNumerator",
+            "columnName": "frameRateNumerator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frameRateDenominator",
+            "columnName": "frameRateDenominator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "availability",
+            "columnName": "availability",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprintSha256",
+            "columnName": "fingerprintSha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resumePositionUs",
+            "columnName": "resumePositionUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastPlayedAt",
+            "columnName": "lastPlayedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bitDepth",
+            "columnName": "bitDepth",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "colorTransfer",
+            "columnName": "colorTransfer",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "colorStandard",
+            "columnName": "colorStandard",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "colorRange",
+            "columnName": "colorRange",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "codecProfile",
+            "columnName": "codecProfile",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mediaStoreId",
+            "columnName": "mediaStoreId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "needsRelink",
+            "columnName": "needsRelink",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_videos_uri",
+            "unique": false,
+            "columnNames": [
+              "uri"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_videos_uri` ON `${TABLE_NAME}` (`uri`)"
+          },
+          {
+            "name": "index_videos_fingerprintSha256",
+            "unique": false,
+            "columnNames": [
+              "fingerprintSha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_videos_fingerprintSha256` ON `${TABLE_NAME}` (`fingerprintSha256`)"
+          }
+        ]
+      },
+      {
+        "tableName": "pins",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `videoId` TEXT NOT NULL, `startUs` INTEGER NOT NULL, `endUs` INTEGER, `title` TEXT NOT NULL, `tagsJson` TEXT NOT NULL, `note` TEXT NOT NULL, `speedNumerator` INTEGER NOT NULL, `speedDenominator` INTEGER NOT NULL, `loop` INTEGER NOT NULL, `zoomScale` REAL NOT NULL, `zoomCenterX` REAL NOT NULL, `zoomCenterY` REAL NOT NULL, `audioMode` TEXT NOT NULL, `aiJobId` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`videoId`) REFERENCES `videos`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "videoId",
+            "columnName": "videoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startUs",
+            "columnName": "startUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endUs",
+            "columnName": "endUs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tagsJson",
+            "columnName": "tagsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speedNumerator",
+            "columnName": "speedNumerator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speedDenominator",
+            "columnName": "speedDenominator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loop",
+            "columnName": "loop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoomScale",
+            "columnName": "zoomScale",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoomCenterX",
+            "columnName": "zoomCenterX",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoomCenterY",
+            "columnName": "zoomCenterY",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioMode",
+            "columnName": "audioMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aiJobId",
+            "columnName": "aiJobId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pins_videoId",
+            "unique": false,
+            "columnNames": [
+              "videoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pins_videoId` ON `${TABLE_NAME}` (`videoId`)"
+          },
+          {
+            "name": "index_pins_aiJobId",
+            "unique": false,
+            "columnNames": [
+              "aiJobId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pins_aiJobId` ON `${TABLE_NAME}` (`aiJobId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "videos",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "videoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "channels",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "channel_videos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`channelId` TEXT NOT NULL, `videoId` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, PRIMARY KEY(`channelId`, `videoId`), FOREIGN KEY(`channelId`) REFERENCES `channels`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`videoId`) REFERENCES `videos`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "channelId",
+            "columnName": "channelId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "videoId",
+            "columnName": "videoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "addedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "channelId",
+            "videoId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_channel_videos_videoId",
+            "unique": false,
+            "columnNames": [
+              "videoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_channel_videos_videoId` ON `${TABLE_NAME}` (`videoId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "channels",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "channelId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "videos",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "videoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ai_jobs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `videoId` TEXT NOT NULL, `pinId` TEXT, `startUs` INTEGER NOT NULL, `endUs` INTEGER NOT NULL, `speedNumerator` INTEGER NOT NULL, `speedDenominator` INTEGER NOT NULL, `fpsNumerator` INTEGER NOT NULL, `fpsDenominator` INTEGER NOT NULL, `status` TEXT NOT NULL, `progress` REAL NOT NULL, `outputPath` TEXT, `cacheKey` TEXT, `sourceFingerprint` TEXT, `sourceRevision` INTEGER NOT NULL, `modelHash` TEXT NOT NULL, `engineHash` TEXT NOT NULL, `precision` TEXT NOT NULL, `colorContract` TEXT NOT NULL, `encoderConfig` TEXT NOT NULL, `audioMode` TEXT NOT NULL, `inferenceCount` INTEGER NOT NULL, `outputFrameCount` INTEGER NOT NULL, `error` TEXT, `capability` TEXT NOT NULL, `requestedAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`videoId`) REFERENCES `videos`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "videoId",
+            "columnName": "videoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pinId",
+            "columnName": "pinId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startUs",
+            "columnName": "startUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endUs",
+            "columnName": "endUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speedNumerator",
+            "columnName": "speedNumerator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speedDenominator",
+            "columnName": "speedDenominator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fpsNumerator",
+            "columnName": "fpsNumerator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fpsDenominator",
+            "columnName": "fpsDenominator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "progress",
+            "columnName": "progress",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outputPath",
+            "columnName": "outputPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cacheKey",
+            "columnName": "cacheKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceFingerprint",
+            "columnName": "sourceFingerprint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceRevision",
+            "columnName": "sourceRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelHash",
+            "columnName": "modelHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "engineHash",
+            "columnName": "engineHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precision",
+            "columnName": "precision",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "colorContract",
+            "columnName": "colorContract",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encoderConfig",
+            "columnName": "encoderConfig",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioMode",
+            "columnName": "audioMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inferenceCount",
+            "columnName": "inferenceCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outputFrameCount",
+            "columnName": "outputFrameCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "error",
+            "columnName": "error",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "capability",
+            "columnName": "capability",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestedAt",
+            "columnName": "requestedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ai_jobs_videoId",
+            "unique": false,
+            "columnNames": [
+              "videoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ai_jobs_videoId` ON `${TABLE_NAME}` (`videoId`)"
+          },
+          {
+            "name": "index_ai_jobs_pinId",
+            "unique": false,
+            "columnNames": [
+              "pinId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ai_jobs_pinId` ON `${TABLE_NAME}` (`pinId`)"
+          },
+          {
+            "name": "index_ai_jobs_cacheKey",
+            "unique": false,
+            "columnNames": [
+              "cacheKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ai_jobs_cacheKey` ON `${TABLE_NAME}` (`cacheKey`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "videos",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "videoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8c73d77207aaead639d1fa171d4dc879')"
+    ]
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "archives": [
+    {
+      "name": "ncnn-b4ba207c18d3103d6df890c0e3a97b469b196b26.tar.gz",
+      "url": "https://codeload.github.com/Tencent/ncnn/tar.gz/b4ba207c18d3103d6df890c0e3a97b469b196b26",
+      "sha256": "b7ca5b58bf65a7069c9473dd2fd6b83a2ae7a12e634464d7a11df3c866160dbf",
+      "destination": "third_party/ncnn"
+    },
+    {
+      "name": "glslang-86ff4bca1ddc7e2262f119c16e7228d0efb67610.tar.gz",
+      "url": "https://codeload.github.com/KhronosGroup/glslang/tar.gz/86ff4bca1ddc7e2262f119c16e7228d0efb67610",
+      "sha256": "cec9ac581a18e4a2bc8709c714644ed486fb2ac34495ad34b4155f9bcf900f74",
+      "destination": "third_party/ncnn/glslang"
+    }
+  ],
+  "files": [
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/LICENSE",
+      "destination": "third_party/rife/LICENSE",
+      "sha256": "a73beab18143600af0b10c6050a953ec233775ce31c2bf3373a794db535329fd"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/README.md",
+      "destination": "third_party/rife/README.md",
+      "sha256": "41c0b4aca03751978d7bdd04b8a274e73e772b60e71519d685be9242c6fa934a"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/src/CMakeLists.txt",
+      "destination": "third_party/rife/src/CMakeLists.txt",
+      "sha256": "70e21b3ce5cf8649c697dc5a5cae1c4c24a715fb115a990c3ff1c74dad8e34dc"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/src/warp.cpp",
+      "destination": "third_party/rife/src/warp.cpp",
+      "sha256": "b3265e82aac39ffdb697bc25a0980e7f52c5b0b911d2b32c537fc40f7bcd8d02"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/src/rife_ops.h",
+      "destination": "third_party/rife/src/rife_ops.h",
+      "sha256": "b22ed5400f8b6f098490725123dc9d2078e8384a051d4487aeccf2b0e65e5c82"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/src/warp.comp",
+      "destination": "third_party/rife/src/warp.comp",
+      "sha256": "febf4ce8e214300f92a6d9ab60f1ad8cf7b9adb4d5b62cfc6d0653d527976e08"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/src/warp_pack4.comp",
+      "destination": "third_party/rife/src/warp_pack4.comp",
+      "sha256": "37f8c40d29d9989df4cff37cb441ef0a42edb783529833acdb0d30c3c7fb7874"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/src/warp_pack8.comp",
+      "destination": "third_party/rife/src/warp_pack8.comp",
+      "sha256": "8cdeae0d1fed3092cf5f9046a2b14f8847c26ea756f6dd262377b60707871d06"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/src/generate_shader_comp_header.cmake",
+      "destination": "third_party/rife/src/generate_shader_comp_header.cmake",
+      "sha256": "d5a0cb82b2795824430a7de9ea1dbeedc62120299314ce35ddd38ee201dadcc7"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/models/rife-v4.6/flownet.param",
+      "destination": "app/src/main/assets/models/rife-v4.6/flownet.param",
+      "sha256": "724569596bcd1e7b9fa50455c604777ebed99746d2ef40aa86e31b5725f1053c"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/models/rife-v4.6/flownet.bin",
+      "destination": "app/src/main/assets/models/rife-v4.6/flownet.bin",
+      "sha256": "f334ed2260149ce0188a6dcf049844e8b0cdd912e01cbcfb63553157d2508958"
+    }
+  ],
+  "patches": [
+    {
+      "path": "third_party/ncnn/src/net.cpp",
+      "beforeSha256": "e004677fca2eb9b1c0a67808f1f07b4c38fcd6fc5b2ae56839bc0788c0338b59",
+      "afterSha256": "bc293868f77a3d57386d0009d6a55e9158d307f5d228d75413dd34ff968dc5b4",
+      "replacements": [
+        {
+          "before": "cmd.submit_and_wait();",
+          "after": "if (int submit_result = cmd.submit_and_wait()) return submit_result;",
+          "count": 5
+        },
+        {
+          "before": "        d->upload_model();",
+          "after": "        if (int upload_result = d->upload_model()) return upload_result;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "path": "third_party/rife/src/warp.cpp",
+      "beforeSha256": "b3265e82aac39ffdb697bc25a0980e7f52c5b0b911d2b32c537fc40f7bcd8d02",
+      "afterSha256": "ffd679958b4ab34038e74feadd9b6dcf3624b6a20e58c484f164a1caa89ac160",
+      "replacements": [
+        {
+          "before": "compile_spirv_module(warp_comp_data, sizeof(warp_comp_data), opt, spirv);",
+          "after": "if (int pipeline_result = compile_spirv_module(warp_comp_data, sizeof(warp_comp_data), opt, spirv)) return pipeline_result;",
+          "count": 1
+        },
+        {
+          "before": "pipeline_warp->create(spirv.data(), spirv.size() * 4, specializations);",
+          "after": "if (int pipeline_result = pipeline_warp->create(spirv.data(), spirv.size() * 4, specializations)) return pipeline_result;",
+          "count": 1
+        },
+        {
+          "before": "compile_spirv_module(warp_pack4_comp_data, sizeof(warp_pack4_comp_data), opt, spirv);",
+          "after": "if (int pipeline_result = compile_spirv_module(warp_pack4_comp_data, sizeof(warp_pack4_comp_data), opt, spirv)) return pipeline_result;",
+          "count": 1
+        },
+        {
+          "before": "pipeline_warp_pack4->create(spirv.data(), spirv.size() * 4, specializations);",
+          "after": "if (int pipeline_result = pipeline_warp_pack4->create(spirv.data(), spirv.size() * 4, specializations)) return pipeline_result;",
+          "count": 1
+        },
+        {
+          "before": "compile_spirv_module(warp_pack8_comp_data, sizeof(warp_pack8_comp_data), opt, spirv);",
+          "after": "if (int pipeline_result = compile_spirv_module(warp_pack8_comp_data, sizeof(warp_pack8_comp_data), opt, spirv)) return pipeline_result;",
+          "count": 1
+        },
+        {
+          "before": "pipeline_warp_pack8->create(spirv.data(), spirv.size() * 4, specializations);",
+          "after": "if (int pipeline_result = pipeline_warp_pack8->create(spirv.data(), spirv.size() * 4, specializations)) return pipeline_result;",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

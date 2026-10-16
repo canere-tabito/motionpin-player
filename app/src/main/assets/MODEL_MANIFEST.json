@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "modelId": "rife-v4.6-f334ed226014",
+  "engineId": "motionpin-rife-v1-ncnn-b4ba207c-fp32",
+  "upstreamRepository": "https://github.com/nihui/rife-ncnn-vulkan",
+  "upstreamRevision": "a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
+  "modelVersion": "RIFE v4.6",
+  "artifacts": [
+    {
+      "path": "assets/models/rife-v4.6/flownet.param",
+      "sha256": "724569596bcd1e7b9fa50455c604777ebed99746d2ef40aa86e31b5725f1053c",
+      "sizeBytes": 16532,
+      "sourceUrl": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/models/rife-v4.6/flownet.param"
+    },
+    {
+      "path": "assets/models/rife-v4.6/flownet.bin",
+      "sha256": "f334ed2260149ce0188a6dcf049844e8b0cdd912e01cbcfb63553157d2508958",
+      "sizeBytes": 10614320,
+      "sourceUrl": "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/models/rife-v4.6/flownet.bin"
+    }
+  ],
+  "nativeDependencies": [
+    {
+      "name": "rife-ncnn-vulkan Warp implementation/shaders",
+      "revision": "a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
+      "license": "MIT"
+    },
+    {
+      "name": "ncnn",
+      "revision": "b4ba207c18d3103d6df890c0e3a97b469b196b26",
+      "license": "BSD-3-Clause plus bundled third-party notices"
+    },
+    {
+      "name": "glslang",
+      "revision": "86ff4bca1ddc7e2262f119c16e7228d0efb67610",
+      "license": "Multiple permissive licenses; full LICENSE.txt preserved"
+    }
+  ],
+  "provenance": {
+    "adoptedArtifact": "Already converted ncnn graph/weights committed in official nihui/rife-ncnn-vulkan repository; copied byte-for-byte without conversion or quantization.",
+    "modelIntroductionCommit": "4824b9413e48696a876a242e0d0bef84dee17e8d",
+    "lastModelChangeCommit": "5ca8c773f2e9ae78ba971bb24c35c1bad5fbaf31",
+    "originalPyTorchCheckpointSha256": null,
+    "originalConversionToolRevision": null,
+    "conversionLimitation": "Upstream converted artifact does not publish a hash of its original PyTorch checkpoint or exact conversion command. No claim is made to reconstruct training or reconvert the model.",
+    "licenseBasis": [
+      "The exact graph and weights are tracked files at the pinned revision under models/rife-v4.6, inside the repository governed by its root MIT LICENSE (Copyright (c) 2020 nihui). No subtree license, model exclusion or separate artifact terms occurs in this revision.",
+      "Pinned README explicitly states: This package includes all the binaries and models required; its model table lists rife-v4.6 / upstream 4.6.",
+      "Model introduction is a commit in the same licensed repository, not an unrelated user checkpoint or an external download linked from the RIFE training repository."
+    ],
+    "licenseEvidenceUrls": [
+      "https://github.com/nihui/rife-ncnn-vulkan/blob/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/LICENSE",
+      "https://github.com/nihui/rife-ncnn-vulkan/blob/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/README.md",
+      "https://github.com/nihui/rife-ncnn-vulkan/tree/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/models/rife-v4.6",
+      "https://github.com/nihui/rife-ncnn-vulkan/commit/4824b9413e48696a876a242e0d0bef84dee17e8d"
+    ],
+    "scope": "Redistribution basis is only these exact committed converted artifacts, with the full repository MIT notice preserved. It is not a blanket statement about other RIFE weights."
+  },
+  "contract": {
+    "input": "Two same-size direct tightly packed RGB8 buffers, nonlinear known SDR BT.709 signal, normalized channelwise to [0,1]. No RGB/BGR swap.",
+    "output": "Same width/height RGB8, saturating rounded model output. Separate codec compression may be lossy.",
+    "inputBlobNames": [
+      "in0",
+      "in1",
+      "in2"
+    ],
+    "outputBlobName": "out0",
+    "customLayer": "rife.Warp (upstream warp.cpp and three Vulkan shaders)",
+    "timestep": "in2 is full spatial scalar map, arbitrary finite t in [0,1]; endpoints copy original and are not counted as inference.",
+    "padding": "Zero-pad right/bottom to next multiple of 32; crop each output row using its padded stride.",
+    "precision": "FP32 activations/storage/arithmetic; fp16/bf16/int8 disabled. Upstream binary retains upstream serialized weight representation.",
+    "scaling": "No full-frame pre-resize, UHD switch or tiling. Model internal learned flow pyramid includes 1/8,1/4,1/2 scales. Final composition uses original-resolution inputs.",
+    "backend": "Android requires Vulkan. CPU enabled only in host test executable.",
+    "unsupported": [
+      "HDR10",
+      "HLG",
+      "HDR10+",
+      "Dolby Vision",
+      "10/12-bit input",
+      "unknown color/bitdepth"
+    ]
+  },
+  "modifications": [
+    "New library/JNI integration uses upstream v4 graph directly, omitting desktop CLI/image codecs/TTA/UHD modes.",
+    "Native preprocessing checks allocations and crops padded output with correct row stride.",
+    "Checked model/graph/timestep operations and finite output validation; failures stop the job.",
+    "Patch pinned ncnn to propagate ignored Vulkan submit/model-upload errors; patch Warp to propagate shader/pipeline creation errors. Exact before/after hashes are in scripts/native-sources.json."
+  ],
+  "validation": {
+    "androidDeviceInference": "NOT_RUN",
+    "hostInference": "PASS: real bundled graph/weights on CPU host, synthetic 65x49, arbitrary t=.25/.5, exact t=0/1 endpoints; observed midpoint differs from simple blend. Not an Android/Vulkan/quality/performance acceptance result.",
+    "hdr": "UNSUPPORTED: upstream RGB8 model and app boundary do not preserve 10-bit/HDR signals.",
+    "hostVulkanAvailability": "UNAVAILABLE: vkCreateInstance failed -9; checked error propagated, no CPU fallback in requested Vulkan mode.",
+    "hostVulkanSoftware": "PASS: exact graph through Vulkan compute on Mesa llvmpipe software driver (LLVM 19.1.7); 65x49 at t=.25/.5. CPU midpoint identical; quarter max RGB8 difference1 in 3/9555 channel values. Not Android/physical GPU performance validation.",
+    "hostVulkanSoftwareDriver": {
+      "url": "https://deb.debian.org/debian/pool/main/m/mesa/mesa-vulkan-drivers_25.0.7-2+deb13u1_amd64.deb",
+      "sha256": "caf2f7d296b7522efe74e40a74bce762a3ce84c33b53b5e54e1248ac2e0a13a5",
+      "bundledInApk": false
+    }
+  },
+  "modelHash": "e3990911821fc917c0ca10badb81afdaa1f8bea8794497728f32320ba8b7381e",
+  "engineHash": "61f6bfcba88e984e33b878a47ac3e22326d034aa12f51ed284ae27e6acc56f4b",
+  "engineSourceFiles": {
+    "app/src/main/cpp/CMakeLists.txt": "a8e63f2e26a769676c6a6aa6c08f55028fe69893ed2f5ce9a0b2cd59d778226f",
+    "app/src/main/cpp/native_rife.cpp": "8056b9eeeb0168740c03ba6d694143b9077698da372fffa1df15d2c0fa1a46a3",
+    "app/src/main/cpp/rife_engine.cpp": "864ff520f5c7acb7ce78a83f7362950a41cc564045f5045b08b2260785414efa",
+    "app/src/main/cpp/rife_engine.h": "c2b85cc4407a99a4a82add32b0f90db8359a42d415083d250e65e9d4f2336738",
+    "app/src/main/java/com/caneretabito/motionpin/ai/NativeRife.kt": "09f669f893b446e17116ed5c1ed0d6cc470634ca8258583a591c379f4838ee5d",
+    "scripts/native-sources.json": "974be9b84df08f0ae214d082b61d00e0c6297cb8799d1aaf1f870ce4589de138"
+  },
+  "engineHashMethod": "SHA-256 of canonical sorted JSON sourcePath:SHA256 map; NativeRife MODEL_HASH/ENGINE_HASH literal values normalized to <computed>. Dependency revisions, checksums and patches are included via scripts/native-sources.json."
+}
