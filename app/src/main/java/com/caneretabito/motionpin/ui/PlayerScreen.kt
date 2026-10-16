@@ -51,6 +51,7 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     var tools by rememberSaveable { mutableStateOf(false) }
     var diagnostics by rememberSaveable { mutableStateOf(false) }
     var pinSheet by rememberSaveable { mutableStateOf(false) }
+    var reelPin by remember { mutableStateOf<PinEntity?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
     val interact: () -> Unit = { hud = true; interaction++ }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
@@ -72,7 +73,7 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                     Text("この動画のピン", style = MaterialTheme.typography.titleMedium, color = Champagne, modifier = Modifier.padding(top = 16.dp, bottom = 12.dp))
                     if (pins.isEmpty()) Text("ピンをタップして時刻を保存。「区間ピン」では前後5秒から編集できます。", color = Muted, modifier = Modifier.padding(bottom = 24.dp))
                     pins.take(20).forEach { pin ->
-                        PinCard(pin, video.displayName, jobs.firstOrNull { it.id == pin.aiJobId }, { model.openPin(pin) }, { model.editor.value = pin }, { model.enqueue(pin) }, { model.deletePin(pin) })
+                        PinCard(pin, video.displayName, jobs.firstOrNull { it.id == pin.aiJobId }, { model.openPin(pin) }, { model.editor.value = pin }, { model.enqueue(pin) }, { model.deletePin(pin) }, { reelPin = pin })
                         Spacer(Modifier.height(12.dp))
                     }
                     if (pins.size > 20) TextButton(onClick = { pinSheet = true }) { Text("すべてのピンを表示 (${pins.size})") }
@@ -121,12 +122,13 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
         DancerSelectionDialog(tracking, model::selectDancerTarget, model::stopDancerTracking)
     if (tools) PlayerTools(model, state, { tools = false; interact() }, { diagnostics = true })
     if (diagnostics) DiagnosticsDialog(inspection, state) { diagnostics = false }
+    reelPin?.let { pin -> ReelPickerDialog(model, pin) { reelPin = null } }
     if (pinSheet) ModalBottomSheet(onDismissRequest = { pinSheet = false }, containerColor = Obsidian) {
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text("この動画のピン · ${pins.size}", style = MaterialTheme.typography.headlineSmall) }
             item { Button(onClick = { model.editRange(); pinSheet = false }, Modifier.heightIn(min = 48.dp)) { Text("区間ピンを作成") } }
             items(pins, key = { it.id }) { pin -> PinCard(pin, video.displayName, jobs.firstOrNull { it.id == pin.aiJobId },
-                { pinSheet = false; model.openPin(pin) }, { pinSheet = false; model.editor.value = pin }, { model.enqueue(pin) }, { model.deletePin(pin) }) }
+                { pinSheet = false; model.openPin(pin) }, { pinSheet = false; model.editor.value = pin }, { model.enqueue(pin) }, { model.deletePin(pin) }, { pinSheet = false; reelPin = pin }) }
         }
     }
 }
