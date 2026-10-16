@@ -282,12 +282,24 @@ fun PinCard(pin: PinEntity, videoName: String, job: AiJobEntity?, onPlay: () -> 
 
 @Composable
 private fun JobCard(job: AiJobEntity, model: MainViewModel) {
+    val eta by model.ai.generationEta.collectAsStateWithLifecycle()
+    val jobEta = eta?.takeIf { it.jobId == job.id && job.status == JobStatus.RUNNING }
+    val remaining = jobEta?.remainingMs
+    val etaLabel = when {
+        jobEta == null -> null
+        jobEta.outputFrames >= jobEta.totalFrames -> "映像の検証・保存中"
+        remaining == null -> "残り時間を計測中…"
+        remaining < 60_000L -> "推定残り 約${maxOf(1L, (remaining + 999L) / 1000L)}秒"
+        else -> "推定残り 約${(remaining + 59_999L) / 60_000L}分"
+    }
     Surface(color = Graphite, shape = RoundedCornerShape(14.dp)) {
         Column(Modifier.padding(14.dp)) {
             Text("${formatTimestamp(job.startUs)}–${formatTimestamp(job.endUs)} · AI ${job.speedNumerator.toFloat() / job.speedDenominator}×", style = MaterialTheme.typography.titleMedium)
             Text(when (job.status) { JobStatus.RUNNING -> "生成中"; JobStatus.WAITING -> "待機中"; JobStatus.QUEUED -> "予約済み"; JobStatus.FAILED -> "停止・要確認"; JobStatus.CANCELLED -> "取消済み"; JobStatus.INTERRUPTED -> "中断"; else -> job.status }, color = Champagne)
             LinearProgressIndicator(progress = { job.progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
             Text("${(job.progress * 100).toInt()}% · 中間フレーム ${job.inferenceCount} 枚", color = Muted, style = MaterialTheme.typography.bodySmall)
+            etaLabel?.let { Text(it, color = Champagne, style = MaterialTheme.typography.bodySmall) }
+            if (jobEta != null) Text("生成フレーム ${jobEta.outputFrames} / ${jobEta.totalFrames} · 処理速度から推定（検証・保存時間は含まず）", color = Muted, style = MaterialTheme.typography.bodySmall)
             job.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
             Row { if (job.status in listOf(JobStatus.RUNNING, JobStatus.WAITING, JobStatus.QUEUED)) TextButton(onClick = { model.cancelJob(job) }) { Text("停止 / 取消") }
                 else TextButton(onClick = { model.resumeJob(job) }) { Text("区間を再生成して再開") } }
