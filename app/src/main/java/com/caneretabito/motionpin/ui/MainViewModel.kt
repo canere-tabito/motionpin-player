@@ -188,6 +188,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun cancelPlaybackTransition() { openJob?.cancel(); playJob?.cancel() }
 
+    fun toggleInstantReplay() { if (currentVideo.value != null) player.toggleInstantReplay() }
+
     fun playPause() {
         cancelPlaybackTransition()
         if (player.exo.isPlaying) { player.pause(); return }
