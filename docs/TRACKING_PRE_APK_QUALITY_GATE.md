@@ -16,7 +16,7 @@ Scope: user-selected multi-person dance tracking. All processing offline. Source
 
 ## Executed verification, NOT Android acceptance
 
-- A source-logic mirror of TrackingMath.kt and a VideoViewport test stub were compiled by local Kotlin/JVM 1.9.0; 13 deterministic assertions passed after correcting the full-body safety-zoom expectation.
+- A source-logic mirror of TrackingMath.kt and a VideoViewport test stub were compiled by local Kotlin/JVM 1.9.0; 18 deterministic assertions passed after correcting the full-body safety-zoom expectation and adding short-occlusion handling.
 - The new Gradle unit suite, Android 1.1.0 dependency resolution, APK model assets, native MediaPipe inference and physical-device quality measurements are **NOT_RUN**. This is not a source build PASS or release signing certification.
 - The model hashes were cross-referenced with a public independent byte comparison. The actual model downloads are performed and verified only when a local build is undertaken.
 
