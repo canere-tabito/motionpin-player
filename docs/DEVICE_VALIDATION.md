@@ -115,6 +115,36 @@ does not certify model redistribution rights or device quality.
    check final content is APK rather than login HTML, and compare byte size/hash
    with the local signed APK. Report download/install-by-tap only if performed.
 
+## New viewer feature device checks (added after initial 0.1.0 report)
+
+These are **NOT_RUN** until the actual updated APK is tested.
+
+1. **Person auto-follow.** Verify the bundled model SHA-256 with
+   `scripts/verify-tracker-apk.py`, launch completely offline, pause at a
+   multi-person scene, tap an explicit person bounding box, verify center
+   tracking, changing zoom and rotation. Test overlapping people, same-color
+   clothing, off-screen exits, fast pans and crowd occlusion: identity
+   ambiguity must stop tracking rather than switch silently.
+2. **4K60 / HDR interaction.** Measure decoder frame drops and heat with
+   dancer tracking *enabled and disabled*, using identical 4K60 SDR/HDR
+   source. Reference-frame downscaling for inference must never affect
+   ExoPlayer's source path, color output or content. Document severe
+   performance regression as FAIL; do not claim realtime tracking
+   performance from host-only data.
+3. **3-second replay.** Trigger at the start, middle, end and inside a
+   clipped interval; validate repeated boundaries and press again to
+   return to original video state. Repeat with completed AI cache and
+   confirm no second slow effect, no source changes and stable pins.
+4. **Scene reels.** Build an ordered cross-video sequence of interval
+   pins, shuffle, loop, skip and stop, change fullscreen orientation
+   between landscape and portrait sources, and test missing/relinked pins.
+   Restart and back up/import the scene-reel settings with the existing
+   4096-character/8 MiB backup limits. Confirm no source-copying and
+   no infinite advancement when a linked pin is absent.
+5. **Compatibility.** Run unit tests, release lint, build-time tracking
+   model retrieval/checksum check, 16KB ELF and ZIP asset verification,
+   and real APK install/update. Source code alone is not acceptance.
+
 ## Copyable result table
 
 | Case | Result | Environment / source | Method and observed result | Limitation / evidence path |
