@@ -129,7 +129,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             abs(result.centerY - view.centerY) > .001f ||
                             abs(result.zoom - view.zoom) > .004f)) player.setViewport(result)
                 }
-                delay(if (eligible && player.exo.isPlaying) 33L else 110L)
+                val pressure = SystemClock.elapsedRealtime() < trackerOverloadedUntilMs
+                delay(when {
+                    !eligible || !player.exo.isPlaying -> 110L
+                    pressure -> 66L // prioritize decoded 4K60 over optional camera transform work
+                    else -> 33L
+                })
             }
         }
         viewModelScope.launch {
