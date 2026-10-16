@@ -1,5 +1,13 @@
 # Validation report
 
+## Pre-APK dancer tracker quality passes (2026-10-16)
+
+New code: dual EfficientDet-Lite2/Lite0 detectors, progressive ahead-of-playback sampling, stricter identity matching, gap-limited trajectory, full-body auto-fit and stabilized framing, source-preserving performance/thermal gates, annotated target picker and background lifecycle cancellation.
+
+- **PASS (host logic smoke only):** Kotlin/JVM 1.9.0 local test compilation with a mirrored copy of pure TrackingMath core and a VideoViewport stub, 13 hand-authored deterministic assertions on motion/ambiguity/missing frames/crop behavior. A stale expectation about full-body zoom was corrected after the first run.
+- **NOT_RUN:** Gradle compilation/test task for actual full Android sources, MediaPipe Android native graph loading/inference, both model asset retrieval and final APK verification, device tracking quality/4K60 thermal/crowd footage.
+- **NO APK CREATED:** This was deliberately a pre-APK source-quality pass, not release delivery. See docs/TRACKING_PRE_APK_QUALITY_GATE.md.
+
 ## Post-report additions — NOT_RUN (2026-10-16)
 
 The user-requested dancer auto-follow (MediaPipe model integration), instant 3-second
