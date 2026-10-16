@@ -139,6 +139,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun requestDancerTracking() {
         val video = currentVideo.value ?: return
         if (trackingOriginalViewport == null) trackingOriginalViewport = player.state.value.viewport
+        tracking.setUserZoom(player.state.value.viewport.zoom)
         continueAfterTargetSelection = player.exo.isPlaying
         resumeAfterTrackingLookahead = false
         player.pause()
