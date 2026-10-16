@@ -1,37 +1,41 @@
 #!/usr/bin/env python3
-"""Check signed/unsigned APKs include the exact offline dancer-tracking asset."""
+"""Verify both offline dancer-tracking models in the exact final Android APK."""
 import hashlib
 import sys
 import zipfile
 from pathlib import Path
 
-MODEL = "assets/models/tracker/efficientdet_lite0.tflite"
-EXPECTED_SHA256 = "40338edf5ec70d43e318b0a716a84d4564cd1802759a7a07170c7e43796dbf58"
-EXPECTED_BYTES = 13836895
+MODELS = {
+    "assets/models/tracker/efficientdet_lite0.tflite": (
+        13836895, "40338edf5ec70d43e318b0a716a84d4564cd1802759a7a07170c7e43796dbf58"
+    ),
+    "assets/models/tracker/efficientdet_lite2.tflite": (
+        23096891, "ad2abbf2b4e10585e15176fd7b5ef03c28dda959ae26fc142549fdd1814db91d"
+    ),
+}
 
-def main(apk_path: str) -> int:
-    apk = Path(apk_path)
-    with zipfile.ZipFile(apk) as archive:
-        info = archive.getinfo(MODEL)
-        if info.compress_type != zipfile.ZIP_STORED:
-            raise ValueError(f"{MODEL} is compressed; MediaPipe asset mapping is not guaranteed")
-        if info.file_size != EXPECTED_BYTES:
-            raise ValueError(f"tracking model has wrong byte size: {info.file_size}")
-        digest = hashlib.sha256()
-        with archive.open(info) as stream:
-            for chunk in iter(lambda: stream.read(1 << 20), b""):
-                digest.update(chunk)
-        if digest.hexdigest() != EXPECTED_SHA256:
-            raise ValueError(f"tracking model hash mismatch: {digest.hexdigest()}")
-    print(f"PASS offline tracking asset: {MODEL}, sha256={EXPECTED_SHA256}")
-    return 0
+def verify(apk_path: str) -> None:
+    with zipfile.ZipFile(Path(apk_path)) as archive:
+        for filename, (length, expected_hash) in MODELS.items():
+            info = archive.getinfo(filename)
+            if info.compress_type != zipfile.ZIP_STORED:
+                raise ValueError(f"{filename} must not be compressed for mapped model loading")
+            if info.file_size != length:
+                raise ValueError(f"{filename} unexpected size: {info.file_size} != {length}")
+            digest = hashlib.sha256()
+            with archive.open(info) as stream:
+                for chunk in iter(lambda: stream.read(1 << 20), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected_hash:
+                raise ValueError(f"{filename} sha256 mismatch")
+            print(f"PASS {filename}: size={length}, sha256={expected_hash}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python3 scripts/verify-tracker-apk.py <apk>", file=sys.stderr)
+        print("Usage: verify-tracker-apk.py APK_PATH", file=sys.stderr)
         sys.exit(2)
     try:
-        sys.exit(main(sys.argv[1]))
-    except (OSError, ValueError, zipfile.BadZipFile, KeyError) as ex:
-        print(f"FAIL tracking APK verification: {ex}", file=sys.stderr)
+        verify(sys.argv[1])
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as err:
+        print(f"FAIL tracker models: {err}", file=sys.stderr)
         sys.exit(1)
