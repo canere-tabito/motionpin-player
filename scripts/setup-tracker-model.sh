@@ -21,14 +21,14 @@ fetch() {
     fi
     local temp
     temp="$(mktemp "$dest/$name.download.XXXXXX")"
-    trap 'rm -f "$temp"' RETURN
+    trap 'rm -f "$temp"' EXIT
     curl --fail --location --retry 3 --connect-timeout 20 --max-time 300 \
         "$base/$name/float32/1/$name.tflite" --output "$temp"
     [[ "$(stat -c '%s' "$temp")" == "$bytes" ]] || { echo "Model size mismatch: $name" >&2; exit 1; }
     printf '%s  %s\n' "$sha" "$temp" | sha256sum --check --status ||
         { echo "Model hash mismatch: $name" >&2; exit 1; }
     mv "$temp" "$dest/$name.tflite"
-    trap - RETURN
+    trap - EXIT
     echo "Verified downloaded offline detector: $name"
 }
 fetch efficientdet_lite0 40338edf5ec70d43e318b0a716a84d4564cd1802759a7a07170c7e43796dbf58 13836895
