@@ -31,6 +31,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val jobs = repository.jobs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val libraryState = repository.libraryState
     val currentVideo = MutableStateFlow<VideoEntity?>(null)
+    val fullscreen = MutableStateFlow(false)
+    fun toggleFullscreen() { fullscreen.value = !fullscreen.value }
     val currentPin = MutableStateFlow<PinEntity?>(null)
     val inspection = MutableStateFlow<PlaybackInspection?>(null)
     val busy = MutableStateFlow<String?>(null)
@@ -144,6 +146,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closePlayer() {
+        fullscreen.value = false
         cancelPlaybackTransition()
         player.pause()
         playJob = operation { savePlaybackPosition(); player.stopForProcessing(); currentVideo.value = null; currentPin.value = null; ai.setPlaybackActive(false) }
