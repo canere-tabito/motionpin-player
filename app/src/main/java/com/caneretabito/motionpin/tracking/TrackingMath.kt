@@ -164,7 +164,13 @@ class SmoothFollowCamera {
     fun follow(timeUs: Long, box: PersonBox, current: VideoViewport, framing: DancerFraming): VideoViewport {
         val goalX = box.cx.coerceIn(0f, 1f)
         val goalY = (box.top + box.height * framing.focusY).coerceIn(0f, 1f)
-        val targetZoom = max(userZoom, framing.minimumZoom)
+        val targetZoom = if (framing == DancerFraming.FULL) {
+            // Keep the entire detected body with ~5% top/bottom safety room even when
+            // it approaches the lens. Zoom must never be forced beyond a full-body crop.
+            val fitBody = (.90f / max(.05f, box.height)).coerceIn(1f, 8f)
+            val fitWidth = (.90f / max(.05f, box.width)).coerceIn(1f, 8f)
+            min(max(userZoom, framing.minimumZoom), min(fitBody, fitWidth))
+        } else max(userZoom, framing.minimumZoom)
         val previousTime = lastUs
         val elapsedUs = if (previousTime == null) 0L else timeUs - previousTime
         val snap = previousTime == null || elapsedUs < 0L || elapsedUs > 900_000L
@@ -176,7 +182,8 @@ class SmoothFollowCamera {
             val deadzone = .0025f
             if (abs(goalX - x) > deadzone) x += (goalX - x) * weight
             if (abs(goalY - y) > deadzone) y += (goalY - y) * weight
-            zoom += (targetZoom - zoom) * weight
+            val zoomWeight = (1.0 - exp(-seconds / .45)).toFloat().coerceIn(.03f, 1f)
+            zoom += (targetZoom - zoom) * zoomWeight
         }
         lastUs = timeUs
         return current.copy(zoom = zoom.coerceIn(1f, 8f),
