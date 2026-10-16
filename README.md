@@ -55,6 +55,7 @@ scripts/setup-tracker-model.sh # Gradle preBuildからも実行・hash検証
 scripts/build-local.sh testDebugUnitTest lintRelease assembleRelease
 python3 scripts/verify-artifact.py app/build/outputs/apk/release/app-release-unsigned.apk \
   --mode build --sdk "$ANDROID_HOME" --model-manifest MODEL_MANIFEST.json
+python3 scripts/verify-tracker-apk.py app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
 releaseビルドにはdebug鍵へのフォールバックがありません。未署名APKはインストール／公開用ではありません。
