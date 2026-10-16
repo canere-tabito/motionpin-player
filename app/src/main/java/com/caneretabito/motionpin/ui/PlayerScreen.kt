@@ -56,12 +56,14 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     var reelPin by remember { mutableStateOf<PinEntity?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
     val interact: () -> Unit = { hud = true; interaction++ }
+    LaunchedEffect(tracking.phase) { if (tracking.phase == "lost") interact() }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val landscape = maxWidth > maxHeight
         val verticalVideo = state.aspect < 1f
         val immersive = fullscreen || landscape || verticalVideo
         LaunchedEffect(hud, state.isPlaying, interaction, immersive) {
-            if (immersive && hud && state.isPlaying && !tools && !diagnostics && !pinSheet) { delay(4_000); hud = false }
+            if (immersive && hud && state.isPlaying && tracking.phase != "lost" &&
+                !tools && !diagnostics && !pinSheet) { delay(4_000); hud = false }
         }
         if (!immersive) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -147,7 +149,7 @@ private fun TrackingControls(model: MainViewModel, tracking: DancerTrackingState
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.CenterFocusStrong, null, tint = Champagne)
-            Text(" ダンサー追尾 · ${tracking.quality.title} · ${tracking.keyframes.size}点",
+            Text(" ダンサー追尾 · ${tracking.quality.title} · ${tracking.matchedFrames}/${tracking.inspectedFrames}検出",
                 color = Champagne, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f))
             if (tracking.phase == "lost") {
