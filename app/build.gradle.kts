@@ -79,6 +79,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("com.google.mediapipe:tasks-vision:1.1.0")
     implementation("androidx.media3:media3-exoplayer:1.6.1")
     implementation("androidx.media3:media3-ui:1.6.1")
     implementation("androidx.room:room-runtime:2.7.1")
@@ -95,3 +96,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// Fail the local build if the exact offline person-detector model is unavailable.
+val prepareTrackerModel by tasks.registering(Exec::class) {
+    commandLine("bash", rootProject.file("scripts/setup-tracker-model.sh").absolutePath)
+}
+tasks.named("preBuild") { dependsOn(prepareTrackerModel) }
