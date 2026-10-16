@@ -15,65 +15,31 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-/** Person locations are normalized in displayed-video space, not SurfaceView/pixel coordinates. */
-data class PersonBox(
-    val left: Float, val top: Float, val right: Float, val bottom: Float,
-    val confidence: Float, val appearance: List<Float>
-) {
-    val cx: Float get() = (left + right) / 2f
-    val cy: Float get() = (top + bottom) / 2f
-    val width: Float get() = right - left
-    val height: Float get() = bottom - top
-    fun contains(x: Float, y: Float) = x in left..right && y in top..bottom
-}
-
-data class TrackingKeyframe(val sourceTimeUs: Long, val box: PersonBox)
-
-/**
- * Do not automatically jump between people when the association is not sufficiently unique.
- * Geometry and a weak clothing/color signature are useful, but cannot establish identity
- * through long occlusion or identical costumes.
- */
-object PersonAssociation {
-    fun choose(previous: PersonBox, candidates: List<PersonBox>): PersonBox? {
-        data class Scored(val box: PersonBox, val score: Float)
-        val possibilities = candidates.mapNotNull { candidate ->
-            val distance = hypot(candidate.cx - previous.cx, candidate.cy - previous.cy)
-            val reach = max(.18f, max(previous.width, previous.height) * 1.25f)
-            if (distance > reach || candidate.width <= 0f || candidate.height <= 0f) return@mapNotNull null
-            val commonLeft = max(previous.left, candidate.left)
-            val commonTop = max(previous.top, candidate.top)
-            val overlap = max(0f, min(previous.right, candidate.right) - commonLeft) *
-                max(0f, min(previous.bottom, candidate.bottom) - commonTop)
-            val union = previous.width * previous.height + candidate.width * candidate.height - overlap
-            val iou = if (union > 0f) overlap / union else 0f
-            val appearance = if (candidate.appearance.size == previous.appearance.size && candidate.appearance.isNotEmpty())
-                candidate.appearance.indices.map { abs(previous.appearance[it] - candidate.appearance[it]) }.average().toFloat()
-            else 1f
-            Scored(candidate, 2.2f * iou - 1.8f * distance - 1.5f * appearance)
-        }.sortedByDescending { it.score }
-        if (possibilities.isEmpty() || possibilities[0].score < -.36f) return null
-        // A near tie is a loss of identity, never a reason to pick an arbitrary dancer.
-        if (possibilities.size > 1 && possibilities[0].score - possibilities[1].score < .17f) return null
-        return possibilities.first().box
-    }
+enum class TrackerQuality(val title: String, val stepUs: Long, val modelFile: String) {
+    HIGH("高精度", 250_000L, "models/tracker/efficientdet_lite2.tflite"),
+    BALANCED("軽快", 500_000L, "models/tracker/efficientdet_lite0.tflite")
 }
 
 data class DancerTrackingState(
-    val phase: String = "idle", // idle, choosing, scanning, active, lost
+    val phase: String = "idle",
     val videoId: String? = null,
     val preview: Bitmap? = null,
     val candidates: List<PersonBox> = emptyList(),
     val keyframes: List<TrackingKeyframe> = emptyList(),
-    val analyzedUntilUs: Long = 0,
+    val analyzedUntilUs: Long = 0L,
+    val quality: TrackerQuality = TrackerQuality.HIGH,
+    val framing: DancerFraming = DancerFraming.FULL,
+    val manualHold: Boolean = false,
+    val rotationCorrectionDegrees: Int = 0,
+    val inspectedFrames: Int = 0,
     val message: String = ""
 )
 
