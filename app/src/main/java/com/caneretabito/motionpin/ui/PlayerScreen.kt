@@ -36,6 +36,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.caneretabito.motionpin.data.*
 import com.caneretabito.motionpin.player.*
+import com.caneretabito.motionpin.tracking.DancerTrackingState
+import com.caneretabito.motionpin.tracking.DancerFraming
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,6 +72,8 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                     PlaybackControls(model, state, selectedPin, compact = false, interact = interact,
                         onTools = { tools = true }, onPins = { pinSheet = true })
+                    if (tracking.videoId == video.id && tracking.phase != "idle")
+                        TrackingControls(model, tracking) { interact() }
                     Text("この動画のピン", style = MaterialTheme.typography.titleMedium, color = Champagne, modifier = Modifier.padding(top = 16.dp, bottom = 12.dp))
                     if (pins.isEmpty()) Text("ピンをタップして時刻を保存。「区間ピン」では前後5秒から編集できます。", color = Muted, modifier = Modifier.padding(bottom = 24.dp))
                     pins.take(20).forEach { pin ->
@@ -91,6 +95,8 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
                     .navigationBarsPadding().padding(horizontal = if (landscape) 28.dp else 14.dp, vertical = 10.dp)) {
                     PlaybackControls(model, state, selectedPin, compact = true, interact = interact, onTools = { tools = true }, onPins = { pinSheet = true })
+                    if (tracking.videoId == video.id && tracking.phase != "idle")
+                        TrackingControls(model, tracking) { interact() }
                 }
                 if (landscape && verticalVideo) {
                     Column(Modifier.align(Alignment.CenterEnd).padding(end = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -119,7 +125,8 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
         } }
     }
     if (tracking.videoId == video.id && tracking.phase == "choosing")
-        DancerSelectionDialog(tracking, model::selectDancerTarget, model::stopDancerTracking)
+        DancerSelectionDialog(tracking, model::selectDancerTarget, { model.stopDancerTracking() },
+            model::changeDancerQuality, model::rotateDancerPreview, model::stepDancerPreview)
     if (tools) PlayerTools(model, state, { tools = false; interact() }, { diagnostics = true })
     if (diagnostics) DiagnosticsDialog(inspection, state) { diagnostics = false }
     reelPin?.let { pin -> ReelPickerDialog(model, pin) { reelPin = null } }
@@ -129,6 +136,37 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
             item { Button(onClick = { model.editRange(); pinSheet = false }, Modifier.heightIn(min = 48.dp)) { Text("区間ピンを作成") } }
             items(pins, key = { it.id }) { pin -> PinCard(pin, video.displayName, jobs.firstOrNull { it.id == pin.aiJobId },
                 { pinSheet = false; model.openPin(pin) }, { pinSheet = false; model.editor.value = pin }, { model.enqueue(pin) }, { model.deletePin(pin) }, { pinSheet = false; reelPin = pin }) }
+        }
+    }
+}
+
+@Composable
+private fun TrackingControls(model: MainViewModel, tracking: DancerTrackingState,
+                             interact: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.CenterFocusStrong, null, tint = Champagne)
+            Text(" ダンサー追尾 · ${tracking.quality.title} · ${tracking.keyframes.size}点",
+                color = Champagne, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f))
+            if (tracking.phase == "lost") {
+                TextButton(onClick = { model.requestDancerTracking(); interact() }) { Text("選び直す") }
+            } else {
+                TextButton(onClick = { model.holdDancerTracking(); interact() }) {
+                    Text(if (tracking.manualHold) "追尾再開" else "画面を固定")
+                }
+            }
+            TextButton(onClick = { model.stopDancerTracking(); interact() }) { Text("終了") }
+        }
+        if (tracking.phase in setOf("active", "scanning")) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(DancerFraming.entries) { framing ->
+                    FilterChip(selected = tracking.framing == framing,
+                        onClick = { model.chooseDancerFraming(framing); interact() },
+                        label = { Text(framing.label) }, modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
         }
     }
 }
@@ -180,6 +218,11 @@ private fun VideoSurface(model: MainViewModel, state: PlaybackState, modifier: M
         .pointerInput(model) {
             detectTransformGestures { _, pan, zoom, _ ->
                 val current = latestState
+                val tracker = model.tracking.state.value
+                if (tracker.videoId == model.currentVideo.value?.id &&
+                    tracker.phase in setOf("active", "scanning") && !tracker.manualHold &&
+                    zoom in .985f..1.015f && pan.getDistance() > 6f)
+                    model.tracking.setManualHold(true)
                 val transform = viewportTransform(size.width.toFloat(), size.height.toFloat(), current.aspect, current.fill, current.viewport)
                 val next = current.viewport.copy(zoom = (current.viewport.zoom * zoom).coerceIn(1f, 8f))
                 model.player.setViewport(if (next.zoom > 1f) next.pan(pan.x, pan.y, transform.baseWidth, transform.baseHeight) else VideoViewport())
