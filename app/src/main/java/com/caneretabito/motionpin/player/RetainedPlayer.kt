@@ -163,6 +163,11 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         try { withTimeout(15_000) { decoderActive.first { !it } } }
         catch (_: kotlinx.coroutines.TimeoutCancellationException) { error("再生decoderの解放を確認できません。AI処理は開始しません。ライブラリに戻って再試行してください。") }
     }
+    /** Read the actual player clock for smooth 30Hz camera tracking, preserving AI-cache source PTS mapping. */
+    fun liveSourcePositionUs(): Long =
+        timeline?.toSourceUs(exo.currentPosition.coerceAtLeast(0L) * 1_000L)
+            ?: mutable.value.sourcePositionUs
+
     fun seekSource(positionUs: Long) { timeline?.let { exo.seekTo(it.toPlayerUs(positionUs) / 1_000); update { copy(sourcePositionUs = it.toSourceUs(it.toPlayerUs(positionUs))) } } }
     fun seekBy(deltaUs: Long) = seekSource(mutable.value.sourcePositionUs + deltaUs)
     fun setSpeed(speed: Float) {
