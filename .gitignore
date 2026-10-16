@@ -1,0 +1,13 @@
+.gradle/
+**/build/
+.cxx/
+local.properties
+*.jks
+*.keystore
+*.apk
+*.aab
+*.hprof
+captures/
+third_party/
+artifacts/
+__pycache__/
