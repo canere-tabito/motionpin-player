@@ -1,5 +1,16 @@
 # Validation report
 
+## Post-report additions — NOT_RUN (2026-10-16)
+
+The user-requested dancer auto-follow (MediaPipe model integration), instant 3-second
+replay and cross-video scene reels were added to the GitHub source **after** the
+original 0.1.0 tests recorded below. None of the original PASS results certify
+this new code. Local Gradle/Android build, new model download/hash verification,
+Android person detection, device playback continuity, and signed upgrade are all
+**NOT_RUN** in this session. The initial APK does not include these changes.
+No GitHub Actions jobs were started.
+
+
 確認日: 2026-10-16 UTC。対象: MotionPin 0.1.0 / versionCode 1 / `com.caneretabito.motionpin`。
 **正式完成・実機合格・署名付き配布を認定するレポートではありません。**
 
