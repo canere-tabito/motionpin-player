@@ -150,6 +150,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (tracking.state.value.phase !in setOf("choosing", "lost")) return
         tracking.changeQuality(video, player.state.value.sourcePositionUs, quality)
     }
+    fun stepDancerPreview(deltaSeconds: Int) {
+        val video = currentVideo.value ?: return
+        if (tracking.state.value.phase != "choosing") return
+        val start = player.state.value.sourcePositionUs
+        val target = (start + deltaSeconds * 1_000_000L)
+            .coerceIn(0L, (video.durationUs - 1L).coerceAtLeast(0L))
+        player.seekSource(target)
+        tracking.requestSelection(video, target, tracking.state.value.rotationCorrectionDegrees)
+    }
     fun rotateDancerPreview() {
         val video = currentVideo.value ?: return
         if (tracking.state.value.phase != "choosing") return
