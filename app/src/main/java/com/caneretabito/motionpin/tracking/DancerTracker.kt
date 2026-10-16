@@ -272,7 +272,8 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         val currentState = _state.value
         if (currentState.videoId != videoId || currentState.manualHold ||
             currentState.phase !in setOf("scanning", "active", "lost")) return null
-        val box = TrackingTrajectory.at(currentState.keyframes, timeUs) ?: return null
+        val box = TrackingTrajectory.at(currentState.keyframes, timeUs,
+            min(900_000L, currentState.quality.stepUs * 2L)) ?: return null
         return camera.follow(timeUs, box, current, currentState.framing)
     }
 
