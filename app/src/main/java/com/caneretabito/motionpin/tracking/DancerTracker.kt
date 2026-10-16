@@ -16,7 +16,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -98,15 +97,20 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         work = scope.launch(Dispatchers.IO) {
             try {
                 val frame = frameAt(video, position)
-                val people = try { withDetector(preferredQuality) { detect(it, frame) } }
-                    catch (e: Exception) { frame.recycle(); throw e }
-                ensureActiveToken(token)
-                _state.update { current ->
-                    if (current.videoId != video.id) current else current.copy(
-                        phase = "choosing", preview = frame, candidates = people,
-                        analyzedUntilUs = position,
-                        message = if (people.isEmpty()) "人物を検出できません。別の時刻や軽快モードで試してください。"
-                        else "追尾する人物を枠または番号で選択してください")
+                var previewAdopted = false
+                try {
+                    val people = withDetector(preferredQuality) { detect(it, frame) }
+                    ensureActiveToken(token)
+                    _state.update { current ->
+                        if (current.videoId != video.id) current else current.copy(
+                            phase = "choosing", preview = frame, candidates = people,
+                            analyzedUntilUs = position,
+                            message = if (people.isEmpty()) "人物を検出できません。別の時刻や軽快モードで試してください。"
+                            else "追尾する人物を枠または番号で選択してください")
+                    }
+                    previewAdopted = true
+                } finally {
+                    if (!previewAdopted) frame.recycle()
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (e: Exception) {
