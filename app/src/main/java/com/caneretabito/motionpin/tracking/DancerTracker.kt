@@ -241,11 +241,18 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
             max(1, (width * scale).toInt()), max(1, (height * scale).toInt())) ?: return null
         val expectedPortrait = height > width
         val actualPortrait = result.height > result.width
-        if (expectedPortrait == actualPortrait || width == height) return result
-        val fixed = Bitmap.createBitmap(result, 0, 0, result.width, result.height,
-            Matrix().apply { postRotate(if (rotated) video.rotationDegrees.toFloat() else 90f) }, true)
-        if (fixed !== result) result.recycle()
-        return fixed
+        val oriented = if (expectedPortrait == actualPortrait || width == height) result else {
+            Bitmap.createBitmap(result, 0, 0, result.width, result.height,
+                Matrix().apply { postRotate(if (rotated) video.rotationDegrees.toFloat() else 90f) }, true)
+                .also { if (it !== result) result.recycle() }
+        }
+        // The *analysis thumbnail only* is converted for the RGB8 model.
+        // Original video frames, HDR metadata and SurfaceView playback are untouched.
+        if (oriented.config == Bitmap.Config.ARGB_8888) return oriented
+        val compatible = oriented.copy(Bitmap.Config.ARGB_8888, false)
+            ?: error("端末で追尾用のARGB_8888フレームを生成できません")
+        oriented.recycle()
+        return compatible
     }
 
     private fun <T> withDetector(block: (ObjectDetector) -> T): T {
