@@ -24,4 +24,20 @@ class PersonAssociationTest {
         assertNull(PersonAssociation.choose(box(.10f, .10f), emptyList()))
         assertNull(PersonAssociation.choose(box(.10f, .10f), listOf(box(.80f, .80f))))
     }
+
+    @Test fun missingMalformedOrNonfiniteAppearanceNeverMeansPerfectIdentityAgreement() {
+        val original = box(.20f, .20f)
+        val invalidSignatures = listOf(emptyList(), List(35) { .5f }, List(36) { Float.NaN },
+            List(36) { Float.POSITIVE_INFINITY }, List(36) { -.1f }, List(36) { 1.1f })
+        invalidSignatures.forEach { appearance ->
+            assertNull(PersonAssociation.choose(original, listOf(original.copy(appearance = appearance))))
+        }
+        assertNull(PersonAssociation.choose(original.copy(appearance = emptyList()), listOf(original)))
+    }
+
+    @Test fun invalidSeedCannotConstructIdentityTracker() {
+        assertThrows(IllegalArgumentException::class.java) {
+            StablePersonMatcher(box(.20f, .20f, clothes = emptyList()), 0)
+        }
+    }
 }

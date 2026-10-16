@@ -14,11 +14,11 @@ The test procedure is [DEVICE_VALIDATION.md](DEVICE_VALIDATION.md).
 
 ## New viewer features added after the initial validation (source inventory, 2026-10-16)
 
-- Dancer tracking (P1, upgraded source): MediaPipe Tasks Vision 1.1.0 with both SHA-256-checked EfficientDet-Lite2 high accuracy (default, 4 samples/s) and Lite0 balanced (2 samples/s); manually chosen target, motion/size/reference-appearance/competitor-margin gates, six-second progressive lookahead, capped keyframes, occlusion-gap limits, damped center/zoom, full-body safe fitting, alternate framing, user hold/reselect, low power/thermal/decoder drop priority. Source still unchanged, runtime offline. Kotlin/JVM pure-core mirror compiled and passed 13 smoke assertions; Gradle Android build, native model load and device quality remain **NOT_RUN**. See [TRACKING_PRE_APK_QUALITY_GATE.md](TRACKING_PRE_APK_QUALITY_GATE.md).
+- Dancer tracking (P1, audited source): actual Lite0/Lite2 model bytes and host MediaPipe 1.1.0 inference verified; source-time identity expiry, rival ambiguity, valid appearance, geometry-aware body framing, native cancellation/ownership, RIFE admission and explicit numbered selection improved. Actual production-code baseline/current scenario metrics and full Android compiler/test/lint outcomes are recorded in [VALIDATION_REPORT.md](../VALIDATION_REPORT.md); the old 18-assertion mirror is no longer the current evidence. Device/native runtime, real dance accuracy, 4K60/HDR and long-duration heat remain **NOT_RUN**. See [TRACKING_PRE_APK_QUALITY_GATE.md](TRACKING_PRE_APK_QUALITY_GATE.md).
 - Instant replay (P1): original and AI-cached source-time 3-second clipping with repeat and restore. CODE PRESENT; actual player/clip boundary, cache seek and control preservation tests are **NOT_RUN**.
 - Favorite scene reels (P1): persistent scene pin references in versioned bounded settings, manual reorder, shuffle, repeat and Media3 clip-end handoff across videos. CODE PRESENT; cross-video device tests, process restart/backup restoration and empty/deleted pin handling are **NOT_RUN**.
 - Model retrieval is restricted to the local build and is NOT proof the new model or native dependency was downloaded, linked, loaded or licensed on a physical Android device.
-- Existing validation report predates these changes. Do not represent the source additions as already built into a signed APK.
+- The validation report distinguishes the current pre-APK checks from the historical 0.1.0 artifact. These additions are not a newly built or signed APK.
 
 ## Separate media acceptance gates
 

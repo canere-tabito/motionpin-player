@@ -28,6 +28,8 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,6 +51,11 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     val selectedPin by model.currentPin.collectAsStateWithLifecycle()
     val inspection by model.inspection.collectAsStateWithLifecycle()
     val jobs by model.jobs.collectAsStateWithLifecycle()
+    // FULL framing needs the complete source even in a portrait screen. Preserve the user's
+    // FILL preference and retain this display mode during hold/loss to avoid an abrupt crop.
+    val fullBodyFit = tracking.videoId == video.id && tracking.keyframes.isNotEmpty() &&
+        tracking.framing == DancerFraming.FULL && tracking.phase in setOf("scanning", "active", "lost")
+    val effectiveFill = state.fill && !fullBodyFit
     var hud by rememberSaveable(video.id) { mutableStateOf(true) }
     var tools by rememberSaveable { mutableStateOf(false) }
     var diagnostics by rememberSaveable { mutableStateOf(false) }
@@ -61,7 +68,7 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
         val landscape = maxWidth > maxHeight
         val verticalVideo = state.aspect < 1f
         val immersive = fullscreen || landscape || verticalVideo
-        LaunchedEffect(hud, state.isPlaying, interaction, immersive) {
+        LaunchedEffect(hud, state.isPlaying, interaction, immersive, tools, diagnostics, pinSheet, tracking.phase) {
             if (immersive && hud && state.isPlaying && tracking.phase != "lost" &&
                 !tools && !diagnostics && !pinSheet) { delay(4_000); hud = false }
         }
@@ -70,12 +77,12 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                 PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen,
                     tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id,
                     { if (tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id) model.stopDancerTracking() else model.requestDancerTracking() })
-                VideoSurface(model, state, Modifier.fillMaxWidth().aspectRatio(state.aspect.coerceAtLeast(.3f)), { hud = !hud }, interact)
+                VideoSurface(model, state, effectiveFill, Modifier.fillMaxWidth().aspectRatio(state.aspect.coerceAtLeast(.3f)), { hud = !hud }, interact)
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-                    PlaybackControls(model, state, selectedPin, compact = false, interact = interact,
+                    PlaybackControls(model, state, selectedPin, compact = false, effectiveFill = effectiveFill, interact = interact,
                         onTools = { tools = true }, onPins = { pinSheet = true })
                     if (tracking.videoId == video.id && tracking.phase != "idle")
-                        TrackingControls(model, tracking) { interact() }
+                        TrackingControls(model, tracking, fullBodyFit && state.fill, showStatusMessage = !immersive) { interact() }
                     Text("この動画のピン", style = MaterialTheme.typography.titleMedium, color = Champagne, modifier = Modifier.padding(top = 16.dp, bottom = 12.dp))
                     if (pins.isEmpty()) Text("ピンをタップして時刻を保存。「区間ピン」では前後5秒から編集できます。", color = Muted, modifier = Modifier.padding(bottom = 24.dp))
                     pins.take(20).forEach { pin ->
@@ -86,7 +93,7 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                 }
             }
         } else {
-            VideoSurface(model, state, Modifier.fillMaxSize(), { hud = !hud }, interact)
+            VideoSurface(model, state, effectiveFill, Modifier.fillMaxSize(), { hud = !hud }, interact)
             if (hud) {
                 Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .8f), Color.Transparent))).statusBarsPadding()) {
                     PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen,
@@ -96,9 +103,9 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
                     .navigationBarsPadding().padding(horizontal = if (landscape) 28.dp else 14.dp, vertical = 10.dp)) {
-                    PlaybackControls(model, state, selectedPin, compact = true, interact = interact, onTools = { tools = true }, onPins = { pinSheet = true })
+                    PlaybackControls(model, state, selectedPin, compact = true, effectiveFill = effectiveFill, interact = interact, onTools = { tools = true }, onPins = { pinSheet = true })
                     if (tracking.videoId == video.id && tracking.phase != "idle")
-                        TrackingControls(model, tracking) { interact() }
+                        TrackingControls(model, tracking, fullBodyFit && state.fill, showStatusMessage = !immersive) { interact() }
                 }
                 if (landscape && verticalVideo) {
                     Column(Modifier.align(Alignment.CenterEnd).padding(end = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -114,10 +121,11 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
                     .background(Color.Black.copy(alpha = .45f), RoundedCornerShape(24.dp))) { Icon(Icons.Default.MoreHoriz, "再生コントロールを表示", tint = Ivory) }
             }
         }
-        if (tracking.videoId == video.id && tracking.phase in setOf("scanning", "active", "lost") && hud) {
-            Surface(Modifier.align(Alignment.TopCenter).padding(top = if (immersive) 78.dp else 4.dp)
+        if (tracking.videoId == video.id && tracking.phase in setOf("scanning", "active", "lost") && hud && immersive) {
+            Surface(Modifier.align(Alignment.TopCenter).padding(top = 78.dp)
                 .widthIn(max = 320.dp), color = Graphite.copy(alpha = .9f), shape = RoundedCornerShape(16.dp)) {
-                Text(tracking.message, Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                Text(tracking.message, Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
                     style = MaterialTheme.typography.bodySmall, color = Champagne)
             }
         }
@@ -144,32 +152,38 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
 
 @Composable
 private fun TrackingControls(model: MainViewModel, tracking: DancerTrackingState,
-                             interact: () -> Unit) {
+                             fullBodyFit: Boolean, showStatusMessage: Boolean, interact: () -> Unit) {
+    val hasTarget = tracking.keyframes.isNotEmpty()
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.CenterFocusStrong, null, tint = Champagne)
-            Text(" ダンサー追尾 · ${tracking.quality.title} · ${tracking.matchedFrames}/${tracking.inspectedFrames}検出",
+            Icon(Icons.Default.CenterFocusStrong, null, tint = Champagne, modifier = Modifier.size(18.dp))
+            Text(" ダンサー追尾 · ${tracking.quality.title}" +
+                if (tracking.manualHold) " · 画面固定中" else if (tracking.phase == "lost") " · 再選択できます" else "",
                 color = Champagne, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f))
-            if (tracking.phase == "lost") {
-                TextButton(onClick = { model.requestDancerTracking(); interact() }) { Text("選び直す") }
-            } else {
-                TextButton(onClick = { model.holdDancerTracking(); interact() }) {
+        }
+        if (showStatusMessage) Text(tracking.message, color = Muted, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        // Horizontal scrolling preserves the 48dp targets at large font sizes and narrow widths.
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (hasTarget && tracking.phase in setOf("active", "scanning", "lost")) item {
+                OutlinedButton(onClick = { model.holdDancerTracking(); interact() }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(if (tracking.manualHold) Icons.Default.PlayArrow else Icons.Default.Pause, null)
                     Text(if (tracking.manualHold) "追尾再開" else "画面を固定")
                 }
             }
-            TextButton(onClick = { model.stopDancerTracking(); interact() }) { Text("終了") }
-        }
-        if (tracking.phase in setOf("active", "scanning")) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { TextButton(onClick = { model.requestDancerTracking(); interact() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("選び直す") } }
+            if (hasTarget && tracking.phase in setOf("active", "scanning", "lost")) {
                 items(DancerFraming.entries) { framing ->
                     FilterChip(selected = tracking.framing == framing,
                         onClick = { model.chooseDancerFraming(framing); interact() },
                         label = { Text(framing.label) }, modifier = Modifier.heightIn(min = 48.dp))
                 }
             }
+            item { TextButton(onClick = { model.stopDancerTracking(); interact() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("追尾終了") } }
         }
+        if (fullBodyFit) Text("全身追尾中はFITで表示", color = Muted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -198,8 +212,9 @@ private fun PlayerHeader(video: VideoEntity, onBack: () -> Unit, onDiagnostics: 
 
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun VideoSurface(model: MainViewModel, state: PlaybackState, modifier: Modifier, onTap: () -> Unit, onInteract: () -> Unit) {
+private fun VideoSurface(model: MainViewModel, state: PlaybackState, effectiveFill: Boolean, modifier: Modifier, onTap: () -> Unit, onInteract: () -> Unit) {
     val latestState by rememberUpdatedState(state)
+    val latestFill by rememberUpdatedState(effectiveFill)
     val tap by rememberUpdatedState(onTap)
     val interaction by rememberUpdatedState(onInteract)
     BoxWithConstraints(modifier.clipToBounds().background(Color.Black)
@@ -222,12 +237,11 @@ private fun VideoSurface(model: MainViewModel, state: PlaybackState, modifier: M
                 val current = latestState
                 val tracker = model.tracking.state.value
                 if (tracker.videoId == model.currentVideo.value?.id &&
-                    tracker.phase in setOf("active", "scanning") && !tracker.manualHold &&
-                    zoom in .985f..1.015f && pan.getDistance() > 6f)
+                    tracker.phase in setOf("active", "scanning", "lost") && tracker.keyframes.isNotEmpty() && !tracker.manualHold)
                     model.tracking.setManualHold(true)
-                val transform = viewportTransform(size.width.toFloat(), size.height.toFloat(), current.aspect, current.fill, current.viewport)
+                val transform = viewportTransform(size.width.toFloat(), size.height.toFloat(), current.aspect, latestFill, current.viewport)
                 val next = current.viewport.copy(zoom = (current.viewport.zoom * zoom).coerceIn(1f, 8f))
-                if (zoom !in .985f..1.015f) model.tracking.setUserZoom(next.zoom)
+                if (zoom != 1f) model.tracking.setUserZoom(next.zoom)
                 model.player.setViewport(if (next.zoom > 1f) next.pan(pan.x, pan.y, transform.baseWidth, transform.baseHeight) else VideoViewport())
                 interaction()
             }
@@ -235,7 +249,8 @@ private fun VideoSurface(model: MainViewModel, state: PlaybackState, modifier: M
         val density = LocalDensity.current
         val widthPx = with(density) { maxWidth.toPx() }
         val heightPx = with(density) { maxHeight.toPx() }
-        val transform = viewportTransform(widthPx, heightPx, state.aspect, state.fill, state.viewport)
+        SideEffect { model.updateTrackingGeometry(widthPx, heightPx) }
+        val transform = viewportTransform(widthPx, heightPx, state.aspect, effectiveFill, state.viewport)
         AndroidView(factory = { context ->
             PlayerView(context).apply {
                 useController = false
@@ -258,7 +273,7 @@ private fun VideoSurface(model: MainViewModel, state: PlaybackState, modifier: M
 }
 
 @Composable
-private fun PlaybackControls(model: MainViewModel, state: PlaybackState, pin: PinEntity?, compact: Boolean,
+private fun PlaybackControls(model: MainViewModel, state: PlaybackState, pin: PinEntity?, compact: Boolean, effectiveFill: Boolean,
                              interact: () -> Unit, onTools: () -> Unit, onPins: () -> Unit) {
     val lower = pin?.takeIf { it.endUs != null }?.startUs ?: 0L
     val upper = (pin?.endUs ?: state.durationUs).coerceAtLeast(lower + 1)
@@ -303,7 +318,7 @@ private fun PlaybackControls(model: MainViewModel, state: PlaybackState, pin: Pi
                 TextButton(onClick = { model.toggleInstantReplay(); interact() }) { Text(if (state.replay) "リプレイ終了" else "直前3秒リプレイ") }
                 TextButton(onClick = onPins) { Text("ピン一覧") }
                 if (pin?.aiJobId != null) TextButton(onClick = { model.compareSourceCache(); interact() }) { Text(if (state.cached) "元動画へ" else "AIへ") }
-                Text("${if (state.fill) "FILL" else "FIT"} · ズーム ${"%.1f".format(state.viewport.zoom)}×", modifier = Modifier.padding(14.dp), color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text("${if (effectiveFill) "FILL" else "FIT"} · ズーム ${"%.1f".format(state.viewport.zoom)}×", modifier = Modifier.padding(14.dp), color = Muted, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -312,6 +327,14 @@ private fun PlaybackControls(model: MainViewModel, state: PlaybackState, pin: Pi
 @Composable
 private fun PlayerTools(model: MainViewModel, state: PlaybackState, onDismiss: () -> Unit, onDiagnostics: () -> Unit) {
     var fillConfirm by remember { mutableStateOf(false) }
+    fun manualViewport(viewport: VideoViewport) {
+        val tracking = model.tracking.state.value
+        if (tracking.videoId == model.currentVideo.value?.id && tracking.keyframes.isNotEmpty() &&
+            tracking.phase in setOf("active", "scanning", "lost") && !tracking.manualHold)
+            model.tracking.setManualHold(true)
+        model.tracking.setUserZoom(viewport.zoom)
+        model.player.setViewport(viewport)
+    }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("映像と再生の設定") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Text("速度", color = Champagne)
@@ -329,15 +352,15 @@ private fun PlayerTools(model: MainViewModel, state: PlaybackState, onDismiss: (
                 FilterChip(state.fill, { fillConfirm = true }, label = { Text("FILL · 切り抜き") }, modifier = Modifier.heightIn(min = 48.dp))
             }
             Text("ズーム ${"%.1f".format(state.viewport.zoom)}×", color = Champagne, modifier = Modifier.padding(top = 8.dp))
-            Slider(state.viewport.zoom, { model.player.setViewport(state.viewport.copy(zoom = it)) }, valueRange = 1f..8f, modifier = Modifier.semantics { contentDescription = "ズーム倍率" })
-            Text("ピンチで拡大、拡大中に1本指で移動できます。中心位置は回転後の映像に対して保存します。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Slider(state.viewport.zoom, { manualViewport(state.viewport.copy(zoom = it)) }, valueRange = 1f..8f, modifier = Modifier.semantics { contentDescription = "ズーム倍率" })
+            Text("ピンチで拡大、拡大中に1本指で移動できます。手動操作中は追尾の画面を固定し、「追尾再開」で戻れます。", color = Muted, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
-                IconButton(onClick = { model.player.setViewport(state.viewport.copy(centerX = state.viewport.centerX - .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowLeft, "表示位置を左へ") }
-                IconButton(onClick = { model.player.setViewport(state.viewport.copy(centerY = state.viewport.centerY - .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowUp, "表示位置を上へ") }
-                IconButton(onClick = { model.player.setViewport(state.viewport.copy(centerY = state.viewport.centerY + .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowDown, "表示位置を下へ") }
-                IconButton(onClick = { model.player.setViewport(state.viewport.copy(centerX = state.viewport.centerX + .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowRight, "表示位置を右へ") }
+                IconButton(onClick = { manualViewport(state.viewport.copy(centerX = state.viewport.centerX - .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowLeft, "表示位置を左へ") }
+                IconButton(onClick = { manualViewport(state.viewport.copy(centerY = state.viewport.centerY - .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowUp, "表示位置を上へ") }
+                IconButton(onClick = { manualViewport(state.viewport.copy(centerY = state.viewport.centerY + .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowDown, "表示位置を下へ") }
+                IconButton(onClick = { manualViewport(state.viewport.copy(centerX = state.viewport.centerX + .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowRight, "表示位置を右へ") }
             }
-            TextButton(onClick = { model.player.setViewport(VideoViewport()) }) { Text("ズームと位置をリセット") }
+            TextButton(onClick = { manualViewport(VideoViewport()) }) { Text("ズームと位置をリセット") }
             TextButton(onClick = onDiagnostics) { Text("decoder・HDR・フレーム診断") }
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } })

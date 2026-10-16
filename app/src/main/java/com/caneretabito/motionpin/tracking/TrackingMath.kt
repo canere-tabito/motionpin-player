@@ -1,10 +1,10 @@
 package com.caneretabito.motionpin.tracking
 
 import com.caneretabito.motionpin.player.VideoViewport
+import com.caneretabito.motionpin.player.ViewportGeometry
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.hypot
-import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 
@@ -22,109 +22,37 @@ data class PersonBox(
     fun valid() = listOf(left, top, right, bottom, confidence).all { it.isFinite() } &&
         left >= 0f && top >= 0f && right <= 1f && bottom <= 1f &&
         width > .012f && height > .026f && confidence in .20f..1f
+
+    /** An absent/corrupt signature is unknown identity, never a zero-distance match. */
+    fun hasValidAppearance() = appearance.isNotEmpty() &&
+        appearance.all { it.isFinite() && it in 0f..1f }
 }
 
 data class TrackingKeyframe(val sourceTimeUs: Long, val box: PersonBox)
 enum class MatchStatus { MATCHED, MISSING, AMBIGUOUS, LOST }
 data class IdentityMatch(val status: MatchStatus, val box: PersonBox? = null, val margin: Float = 0f)
 
-/**
- * Pure, testable identity association. Motion prediction, body proportions, reference appearance
- * and an explicit second-best margin are all required. A similar-cost candidate is not a match.
- * This is conservative short-term tracking, NOT biometric/person reidentification.
- */
-class StablePersonMatcher(seed: PersonBox, startUs: Long) {
-    private val initial = seed
-    private var last = seed
-    private var lastTimeUs = startUs
-    private var speedX = 0f
-    private var speedY = 0f
-    private var missingCount = 0
-    private var missingStartedUs: Long? = null
-    private var permanentlyLost = false
-
-    init { require(seed.valid() && startUs >= 0) }
-
-    fun step(timeUs: Long, candidates: List<PersonBox>): IdentityMatch {
-        if (permanentlyLost) return IdentityMatch(MatchStatus.LOST)
-        if (timeUs <= lastTimeUs) return IdentityMatch(MatchStatus.MISSING)
-        val seconds = ((timeUs - lastTimeUs) / 1_000_000.0).toFloat().coerceIn(.001f, 2f)
-        val predictedX = (last.cx + speedX * seconds).coerceIn(0f, 1f)
-        val predictedY = (last.cy + speedY * seconds).coerceIn(0f, 1f)
-        val travelLimit = (max(.19f, max(last.width, last.height) * .80f) + .14f * seconds)
-            .coerceAtMost(.55f)
-        data class Candidate(val box: PersonBox, val cost: Float)
-        val scores = candidates.mapNotNull { box ->
-            if (!box.valid()) return@mapNotNull null
-            val distance = hypot(box.cx - predictedX, box.cy - predictedY)
-            val distanceFromLast = hypot(box.cx - last.cx, box.cy - last.cy)
-            if (distance > travelLimit || distanceFromLast > travelLimit * 1.5f) return@mapNotNull null
-            val relativeArea = box.area / max(.0001f, last.area)
-            if (relativeArea !in .23f..4.2f) return@mapNotNull null
-            val appearanceToOriginal = appearanceDistance(initial.appearance, box.appearance)
-            val appearanceToRecent = appearanceDistance(last.appearance, box.appearance)
-            if (appearanceToOriginal > .34f || appearanceToRecent > .36f) return@mapNotNull null
-            val overlap = max(0f, min(last.right, box.right) - max(last.left, box.left)) *
-                max(0f, min(last.bottom, box.bottom) - max(last.top, box.top))
-            val iou = overlap / max(.0001f, last.area + box.area - overlap)
-            val bodyRatio = abs(ln(relativeArea))
-            val appearanceCost = .55f * appearanceToOriginal + .45f * appearanceToRecent
-            val cost = 1.55f * distance / travelLimit + .95f * appearanceCost +
-                .22f * bodyRatio - .38f * iou - .07f * box.confidence
-            Candidate(box, cost)
-        }.sortedBy { it.cost }
-        val best = scores.firstOrNull()
-        val runnerUp = scores.getOrNull(1)
-        val ambiguous = best != null && runnerUp != null && runnerUp.cost - best.cost < .18f
-        val acceptable = best != null && best.cost < 1.22f && !ambiguous
-        if (!acceptable) {
-            missingCount++
-            if (missingStartedUs == null) missingStartedUs = timeUs
-            // Allow a short gap, but NEVER jump to a near-tied dancer.
-            if (missingCount >= 5 || timeUs - (missingStartedUs ?: timeUs) >= 1_250_000L) {
-                permanentlyLost = true
-                return IdentityMatch(MatchStatus.LOST)
-            }
-            return IdentityMatch(if (ambiguous) MatchStatus.AMBIGUOUS else MatchStatus.MISSING)
-        }
-        val choice = checkNotNull(best).box
-        // Limit predictive velocity; jumps and shot cuts may otherwise project wildly.
-        val observationVx = ((choice.cx - last.cx) / seconds).coerceIn(-.9f, .9f)
-        val observationVy = ((choice.cy - last.cy) / seconds).coerceIn(-.9f, .9f)
-        speedX = speedX * .45f + observationVx * .55f
-        speedY = speedY * .45f + observationVy * .55f
-        last = choice
-        lastTimeUs = timeUs
-        missingCount = 0
-        missingStartedUs = null
-        return IdentityMatch(MatchStatus.MATCHED, choice,
-            if (runnerUp == null) 1f else (runnerUp.cost - best.cost).coerceAtLeast(0f))
-    }
-
-    private fun appearanceDistance(a: List<Float>, b: List<Float>): Float {
-        if (a.isEmpty() || b.isEmpty() || a.size != b.size) return 0f
-        return (a.indices.sumOf { abs(a[it] - b[it]).toDouble() } / a.size).toFloat()
-    }
-}
-
 /** Backwards-compatible stateless facade, including conservative multi-candidate ambiguity. */
 object PersonAssociation {
     fun choose(previous: PersonBox, candidates: List<PersonBox>): PersonBox? =
-        if (!previous.valid()) null else StablePersonMatcher(previous, 0).step(500_000L, candidates).box
+        if (!previous.valid() || !previous.hasValidAppearance()) null
+        else StablePersonMatcher(previous, 0).step(500_000L, candidates).box
 }
 
-enum class DancerFraming(val label: String, val focusY: Float, val minimumZoom: Float) {
-    FULL("全身", .50f, 1.65f),
-    UPPER("上半身", .30f, 2.50f),
-    LOWER("脚・フットワーク", .73f, 2.65f)
+enum class DancerFraming(val label: String, val focusY: Float, val minimumZoom: Float,
+                         val regionTop: Float, val regionBottom: Float) {
+    FULL("全身", .50f, 1.65f, 0f, 1f),
+    UPPER("上半身", .30f, 2.50f, 0f, .60f),
+    LOWER("脚・フットワーク", .73f, 2.65f, .46f, 1f)
 }
 
 object TrackingTrajectory {
-    /** Never extrapolate more than 250ms outside actually validated detections. */
+    /** Hold at most 250ms after the final observation; no invented post-observation velocity. */
     fun at(keyframes: List<TrackingKeyframe>, timeUs: Long, maxGapUs: Long = 900_000L): PersonBox? {
-        if (keyframes.isEmpty() || timeUs < keyframes.first().sourceTimeUs ||
-            timeUs > keyframes.last().sourceTimeUs + 250_000L) return null
-        if (timeUs >= keyframes.last().sourceTimeUs) return keyframes.last().box
+        if (keyframes.isEmpty() || maxGapUs < 0L || timeUs < keyframes.first().sourceTimeUs) return null
+        if (timeUs >= keyframes.last().sourceTimeUs) return keyframes.last().box.takeIf {
+            timeUs - keyframes.last().sourceTimeUs <= 250_000L && it.valid()
+        }
         var low = 0
         var high = keyframes.size
         while (low < high) {
@@ -132,11 +60,12 @@ object TrackingTrajectory {
             if (keyframes[mid].sourceTimeUs < timeUs) low = mid + 1 else high = mid
         }
         val right = keyframes.getOrElse(low) { keyframes.last() }
+        // A real confirmed recovery is usable even when the preceding gap is too long to bridge.
+        if (right.sourceTimeUs == timeUs) return right.box.takeIf { it.valid() }
         val left = if (low == 0) right else keyframes[low - 1]
         val distance = right.sourceTimeUs - left.sourceTimeUs
-        if (distance > maxGapUs) return null // An occluded gap must not be smoothly faked over.
-        val weight = if (distance == 0L) 0f else
-            ((timeUs - left.sourceTimeUs).toDouble() / distance).toFloat().coerceIn(0f, 1f)
+        if (distance <= 0L || distance > maxGapUs || !left.box.valid() || !right.box.valid()) return null
+        val weight = ((timeUs - left.sourceTimeUs).toDouble() / distance).toFloat().coerceIn(0f, 1f)
         fun blend(a: Float, b: Float) = a + (b - a) * weight
         return left.box.copy(
             left = blend(left.box.left, right.box.left),
@@ -157,41 +86,103 @@ class SmoothFollowCamera {
     private var y = .5f
     private var zoom = 1f
     private var userZoom = 1f
+    private var lastGoalX: Float? = null
+    private var lastGoalY: Float? = null
+    private var velocityX = 0f
+    private var velocityY = 0f
+    private var lastFraming: DancerFraming? = null
+    private var lastGeometry: ViewportGeometry? = null
+    private var lastUserZoom = 1f
+    private var resuming = false
 
-    fun reset() { lastUs = null }
+    fun reset() {
+        lastUs = null
+        lastGoalX = null; lastGoalY = null
+        velocityX = 0f; velocityY = 0f
+        resuming = false
+    }
     fun resumeFrom(viewport: VideoViewport, sourceTimeUs: Long) {
-        x = viewport.centerX.coerceIn(0f, 1f)
-        y = viewport.centerY.coerceIn(0f, 1f)
-        zoom = viewport.zoom.coerceIn(1f, 8f)
+        val safe = viewport.bounded()
+        x = safe.centerX; y = safe.centerY; zoom = safe.zoom
+        lastGoalX = null; lastGoalY = null
+        velocityX = 0f; velocityY = 0f
         lastUs = sourceTimeUs
+        resuming = true
     }
     fun setUserZoom(value: Float) { if (value.isFinite()) userZoom = value.coerceIn(1f, 8f) }
 
-    fun follow(timeUs: Long, box: PersonBox, current: VideoViewport, framing: DancerFraming): VideoViewport {
+    fun follow(timeUs: Long, box: PersonBox, current: VideoViewport, framing: DancerFraming,
+               geometry: ViewportGeometry = ViewportGeometry()): VideoViewport {
+        if (timeUs < 0 || !box.valid()) return current.bounded()
         val goalX = box.cx.coerceIn(0f, 1f)
         val goalY = (box.top + box.height * framing.focusY).coerceIn(0f, 1f)
-        val targetZoom = if (framing == DancerFraming.FULL) {
-            // Keep the entire detected body with ~5% top/bottom safety room even when
-            // it approaches the lens. Zoom must never be forced beyond a full-body crop.
-            val fitBody = (.90f / max(.05f, box.height)).coerceIn(1f, 8f)
-            val fitWidth = (.90f / max(.05f, box.width)).coerceIn(1f, 8f)
-            min(max(userZoom, framing.minimumZoom), min(fitBody, fitWidth))
-        } else max(userZoom, framing.minimumZoom)
+        val regionTop = box.top + box.height * framing.regionTop
+        val regionBottom = box.top + box.height * framing.regionBottom
+        val regionHeight = regionBottom - regionTop
+        val fitBody = .90f * geometry.heightAtUnitZoom / regionHeight
+        val fitWidth = .90f * geometry.widthAtUnitZoom / box.width
+        val safeRegionZoom = min(fitBody, fitWidth).coerceIn(1f, 8f)
+        // Leave a comfort band between desired framing and the hard containment boundary.
+        // Clamping to the desired 10% padding every tick would bypass zoom damping whenever
+        // the detector's body height changes slightly, even with the entire body still visible.
+        val containmentZoom = min(.98f * geometry.heightAtUnitZoom / regionHeight,
+            .98f * geometry.widthAtUnitZoom / box.width).coerceIn(1f, 8f)
+        // Adapt to a distant dancer as well as a close-up, without claiming extra source detail.
+        // FULL tracking uses FIT in the UI; in FILL a region may not fit even at 1x.
+        val subjectZoom = .72f * geometry.heightAtUnitZoom / regionHeight
+        val targetZoom = min(max(max(userZoom, framing.minimumZoom), subjectZoom), safeRegionZoom)
         val previousTime = lastUs
         val elapsedUs = if (previousTime == null) 0L else timeUs - previousTime
-        val snap = previousTime == null || elapsedUs < 0L || elapsedUs > 900_000L
+        val changed = lastFraming != framing || lastGeometry != geometry || lastUserZoom != userZoom
+        // A paused frame must not drift each time the UI asks for the same source timestamp.
+        if (previousTime != null && elapsedUs == 0L && (!changed || resuming)) return current.bounded()
+        val snap = previousTime == null || elapsedUs < 0L || elapsedUs > 900_000L ||
+            (elapsedUs == 0L && changed)
         if (snap) {
             x = goalX; y = goalY; zoom = targetZoom
+            velocityX = 0f; velocityY = 0f
         } else {
             val seconds = elapsedUs / 1_000_000.0
-            val weight = (1.0 - exp(-seconds / .13)).toFloat().coerceIn(.05f, 1f)
-            val deadzone = .0025f
-            if (abs(goalX - x) > deadzone) x += (goalX - x) * weight
-            if (abs(goalY - y) > deadzone) y += (goalY - y) * weight
-            val zoomWeight = (1.0 - exp(-seconds / .45)).toFloat().coerceIn(.03f, 1f)
-            zoom += (targetZoom - zoom) * zoomWeight
+            val velocityWeight = (1.0 - exp(-seconds / .12)).toFloat()
+            fun speed(goal: Float, old: Float?): Float {
+                val delta = goal - (old ?: goal)
+                // A source-time speed threshold avoids changing behavior merely because
+                // slow playback or a busy UI polls the same motion at a different interval.
+                return if (abs(delta) < .24 * seconds) 0f else (delta / seconds).toFloat().coerceIn(-1f, 1f)
+            }
+            val observedX = speed(goalX, lastGoalX)
+            val observedY = speed(goalY, lastGoalY)
+            val continuingX = observedX * velocityX > .0001f
+            val continuingY = observedY * velocityY > .0001f
+            velocityX += (observedX - velocityX) * velocityWeight
+            velocityY += (observedY - velocityY) * velocityWeight
+            val motion = hypot(velocityX, velocityY)
+            val responseSeconds = (.19f - .20f * motion).coerceIn(.075f, .19f)
+            val weight = (1.0 - exp(-seconds / responseSeconds)).toFloat()
+            val leadX = if (continuingX) (velocityX * .035f).coerceIn(-box.width * .15f, box.width * .15f) else 0f
+            val leadY = if (continuingY) (velocityY * .035f).coerceIn(-box.height * .10f, box.height * .10f) else 0f
+            val deadzone = .0035f
+            if (abs(goalX + leadX - x) > deadzone) x += (goalX + leadX - x) * weight
+            if (abs(goalY + leadY - y) > deadzone) y += (goalY + leadY - y) * weight
+            val zoomWeight = (1.0 - exp(-seconds / .55)).toFloat()
+            if (abs(targetZoom - zoom) > .025f) zoom += (targetZoom - zoom) * zoomWeight
         }
+        if (!resuming) {
+            // Smoothing cannot leave an approaching/jumping body outside the current crop.
+            // User-requested manual resume is allowed to ease from the held composition.
+            zoom = min(zoom, containmentZoom)
+            fun contain(center: Float, first: Float, last: Float, visible: Float): Float =
+                if (last - first <= visible) center.coerceIn(last - visible / 2f, first + visible / 2f)
+                else center
+            x = contain(x, box.left, box.right, geometry.visibleWidth(zoom))
+            y = contain(y, regionTop, regionBottom, geometry.visibleHeight(zoom))
+        }
+        // Once close enough, restore strict full-body safety after a manually held crop.
+        if (resuming && abs(x - goalX) < .02f && abs(y - goalY) < .02f && abs(zoom - targetZoom) < .04f)
+            resuming = false
         lastUs = timeUs
+        lastGoalX = goalX; lastGoalY = goalY
+        lastFraming = framing; lastGeometry = geometry; lastUserZoom = userZoom
         return current.copy(zoom = zoom.coerceIn(1f, 8f),
             centerX = x.coerceIn(0f, 1f), centerY = y.coerceIn(0f, 1f))
     }

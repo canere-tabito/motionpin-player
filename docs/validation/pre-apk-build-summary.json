@@ -1,0 +1,241 @@
+{
+  "dateUtc": "2026-10-16",
+  "status": "PASS",
+  "scope": "Pre-APK host compile/test/lint and real model smoke; not device/performance acceptance",
+  "baseCommit": "cfc819794f9b811268398b617b63465b3caf9e29",
+  "codeFingerprint": {
+    "sha256": "c6fd7d65236acc51efe3fddcb1d45ec84a4b76bd0b1bb8ef52deed6bd8a96891",
+    "method": "Sorted app/src .kt/.java/.xml plus app/build.gradle.kts, build.gradle.kts, gradle.properties; concatenate relative path, NUL, bytes, NUL"
+  },
+  "toolchain": {
+    "jdk": "Temurin 21.0.12.1+1",
+    "gradle": "8.11.1 (wrapper cache)",
+    "agp": "8.9.2",
+    "kotlin": "2.1.20",
+    "jvmTarget": 17,
+    "compileSdk": 35,
+    "targetSdk": 35,
+    "minSdk": 29,
+    "buildTools": "35.0.0",
+    "ndk": "28.1.13356709",
+    "cmake": "3.22.1",
+    "platformTools": "37.0.1",
+    "mediapipe": "1.1.0",
+    "media3": "1.6.1"
+  },
+  "command": "bash scripts/validate-pre-apk.sh",
+  "tasks": {
+    "resolvedTaskGraphDryRun": "PASS",
+    "verifyDebugOfflineManifest": "PASS",
+    "verifyReleaseOfflineManifest": "PASS",
+    "compileDebugKotlin": "PASS",
+    "compileReleaseKotlin": "PASS",
+    "compileDebugAndroidTestKotlin": "PASS",
+    "testDebugUnitTest": "PASS",
+    "lintRelease": "PASS"
+  },
+  "unitTests": {
+    "tests": 103,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "testSuites": [
+    {
+      "suite": "com.caneretabito.motionpin.PlaybackGeometryTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.PlaybackPressureMonitorTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.ai.FrameEtaEstimatorTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.ai.PipelineSafetyTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.data.SceneReelCodecTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.domain.BackupTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.domain.JobPersistenceTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.domain.QualityTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.domain.TimelineTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.tracking.MatcherScenarioTest",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.tracking.PersonAssociationTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.tracking.TrackingAnalysisSafetyTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.tracking.TrackingQualityTest",
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.caneretabito.motionpin.ui.DancerSelectionHitTestTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "lint": {
+    "errors": 0,
+    "warnings": 28,
+    "issueCounts": {
+      "GradleDependency": 15,
+      "ChromeOsAbiSupport": 1,
+      "StaticFieldLeak": 1,
+      "KaptUsageInsteadOfKsp": 1,
+      "UseKtx": 10
+    },
+    "review": "StaticFieldLeak is MotionRuntime retaining context.applicationContext, not Activity; ARM64-only and pinned dependency/KAPT choices retained. UseKtx/deprecation warnings are not suppressed."
+  },
+  "offlineManifest": {
+    "original": "FAIL: transport-backend-cct:3.1.0 injected INTERNET and upload components into both variants",
+    "final": "PASS: explicit manifest removals and independent merged-manifest build gate",
+    "accessNetworkState": "Retained: also required by Media3; does not permit network transmission",
+    "runtimeTelemetryUpgradeTest": "NOT_RUN; no Android runtime"
+  },
+  "modelHost": {
+    "status": "PASS",
+    "mediapipePython": "1.1.0",
+    "litertPython": "2.1.0",
+    "report": "docs/TRACKING_HOST_MODEL_VALIDATION.md",
+    "personFixtureSha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+    "models": [
+      {
+        "file": "efficientdet_lite0.tflite",
+        "bytes": 13836895,
+        "sha256": "40338edf5ec70d43e318b0a716a84d4564cd1802759a7a07170c7e43796dbf58",
+        "blankDetections": 0,
+        "personScores": [
+          0.80827796459198
+        ]
+      },
+      {
+        "file": "efficientdet_lite2.tflite",
+        "bytes": 23096891,
+        "sha256": "ad2abbf2b4e10585e15176fd7b5ef03c28dda959ae26fc142549fdd1814db91d",
+        "blankDetections": 0,
+        "personScores": [
+          0.8760700821876526,
+          0.2585580050945282
+        ]
+      }
+    ]
+  },
+  "initialFailuresAndFixes": [
+    {
+      "check": "SDK bootstrap",
+      "result": "FAIL: temporary Build Tools archive invalid stored block lengths",
+      "resolution": "Serial sdkmanager installation retry PASS; no version change"
+    },
+    {
+      "check": "First JVM run while camera source was being finalized",
+      "result": "FAIL: 1/103, smallBodySizeNoiseUsesComfortMarginInsteadOfForcingZoomChanges",
+      "resolution": "Final camera sources and test recompiled together; 103/103 PASS"
+    },
+    {
+      "check": "Merged offline manifest",
+      "result": "FAIL: dependency-injected INTERNET",
+      "resolution": "Remove INTERNET and DataTransport discovery/job/receiver; gate rejects original and passes final debug/release"
+    }
+  ],
+  "preApkGuard": {
+    "status": "PASS",
+    "negativeCheck": "assembleRelease --dry-run rejected packageRelease and assembleRelease before any task execution",
+    "apkOrAabGenerated": false,
+    "signingKeysGenerated": false,
+    "githubActionsUsed": false
+  },
+  "hardware": {
+    "devKvmPresent": false,
+    "devDriPresent": false,
+    "usbBusPresent": false,
+    "adbDevices": "FAIL: adb devices -l aborted trying /home/agent/.android (read-only), despite workspace ANDROID_USER_HOME; HOME not changed"
+  },
+  "notRun": [
+    "Android instrumentation execution and offline device model loading",
+    "APK generation, ZIP/model packaging, signing, R8 runtime and 16KB device loading",
+    "Real dance identity/occlusion accuracy study",
+    "H.264/HEVC 4K60 OFF/ON dropped frames, HDR, AV sync, thermal, CPU/GPU and 10-30 minute memory profile",
+    "SurfaceView crop/orientation interaction on devices",
+    "Upgrade telemetry lifecycle and absence of background work"
+  ],
+  "localEvidence": [
+    "artifacts/validation/pre-apk-task-graph.log",
+    "artifacts/validation/pre-apk-gradle.log",
+    "artifacts/validation/pre-apk-initial-gradle.log",
+    "artifacts/validation/pre-apk-guard-reject.log",
+    "artifacts/validation/offline-manifest-before-fix.log",
+    "app/build/reports/lint-results-release.xml",
+    "app/build/test-results/testDebugUnitTest/",
+    "artifacts/validation/model-host.json",
+    "artifacts/validation/mpimage-ownership.txt",
+    "artifacts/validation/mediapipe-logging.txt",
+    "artifacts/validation/transport-scheduler.txt",
+    "artifacts/validation/adb-devices.log"
+  ]
+}

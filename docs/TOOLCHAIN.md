@@ -19,8 +19,9 @@ Installed and checked on 2026-10-16 in the Codex workspace. No GitHub Actions or
 | Coroutines | 1.10.1 |
 | Platform tools | 37.0.1 |
 
-The preinstalled system OpenJDK is a runtime-only package and has no `javac`; dependency
-resolution worked, but the first compilation task correctly rejected it. The full Temurin JDK
+The preinstalled system OpenJDK is a runtime-only package and has no `javac`. This
+session provisioned the full JDK before compilation; the earlier report of a
+compilation rejecting the runtime-only JDK belongs to a prior workspace. The full Temurin JDK
 was obtained from Adoptium's official `temurin21-binaries` release
 `jdk-21.0.12.1+1`, artifact `OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz`.
 Its SHA-256 was verified against the official Adoptium release metadata:
@@ -41,7 +42,9 @@ the SDK package licenses. These SDK tools are build dependencies, not APK assets
 
 ## Local build
 
-SDK is at `/workspace/toolchains/android-sdk`; Gradle is at `/workspace/toolchains/gradle-8.11.1`.
+SDK is at `/workspace/toolchains/android-sdk`; the Gradle 8.11.1 distribution is
+downloaded by the checked-in wrapper under
+`/workspace/toolchains/gradle-cache/wrapper/dists/gradle-8.11.1-bin/`.
 The local, ignored `local.properties` sets the SDK path. For another workstation, provide its
 own SDK path and install the versions above. Set up pinned native sources with
 `scripts/setup-native.sh` before compiling.
@@ -51,18 +54,29 @@ export ANDROID_HOME=/workspace/toolchains/android-sdk
 export JAVA_HOME=/workspace/toolchains/jdk-21.0.12.1+1
 export ANDROID_USER_HOME=/workspace/toolchains/android-user
 export GRADLE_USER_HOME=/workspace/toolchains/gradle-cache
-./gradlew --no-daemon testDebugUnitTest lintRelease assembleRelease
+bash scripts/validate-pre-apk.sh
 ```
 
 `scripts/build-local.sh` supplies these workspace paths and forwards the session's HTTP/HTTPS
-proxy host and port to Java. It accepts Gradle task arguments; with no arguments it runs the
-three tasks shown above. Proxy credentials are never placed in command arguments or logs.
+proxy host and port to Java. Its default tasks compile debug/release Kotlin, compile
+instrumentation Kotlin, run debug JVM tests and release lint. It does not generate an APK.
+`scripts/validate-pre-apk.sh` first inspects the resolved task graph with `--dry-run`
+and uses `scripts/no-apk.init.gradle` to reject artifact assembly, APK packaging,
+signing, installation and publishing before any task executes. Resource packaging
+and classes JARs needed by compilation are allowed. Proxy credentials are never
+placed in command arguments or logs.
+
+Each debug/release variant also runs `verify*OfflineManifest` against AGP's actual
+merged manifest before Kotlin compilation, tests or lint. This rejects INTERNET
+and DataTransport upload components contributed by dependencies. MediaPipe 1.1.0
+otherwise silently adds INTERNET through its DataTransport backend; inspecting
+only `app/src/main/AndroidManifest.xml` misses that violation.
 
 In this managed environment Gradle requires the network-enabled execution sandbox for its
 local daemon socket, including offline builds. Proxy addresses are read from the environment;
 none are hardcoded in the repository. The SDK and Gradle caches live under `/workspace/toolchains`.
-No release key or fallback release signing config is generated. `assembleRelease` produces an
-unsigned APK until the canonical signing process is supplied separately.
+No release key or fallback release signing config is generated. APK generation,
+canonical signing and release publication require a later explicit instruction.
 
 The Gradle native configuration uses modern uncompressed JNI library packaging and NDK flexible
 page-size support. Final APK ZIP and ELF segment alignment still require artifact inspection;

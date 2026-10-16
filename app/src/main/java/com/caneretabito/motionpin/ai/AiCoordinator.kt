@@ -51,6 +51,7 @@ class AiCoordinator(context: Context, private val repository: MotionRepository) 
     val generationEta: StateFlow<AiGenerationEta?> = _generationEta.asStateFlow()
     @Volatile private var foreground = false
     @Volatile private var playbackActive = false
+    private var playbackAdmissionRevision = 0L
     @Volatile private var closed = false
     @Volatile private var forcedPause: String? = null
     @Volatile private var thermalLatched = false
@@ -155,7 +156,36 @@ class AiCoordinator(context: Context, private val repository: MotionRepository) 
     }
 
     fun setForeground(value: Boolean) { synchronized(admissionLock) { foreground = value }; signal.trySend(Unit) }
-    fun setPlaybackActive(value: Boolean) { synchronized(admissionLock) { playbackActive = value }; signal.trySend(Unit) }
+    fun setPlaybackActive(value: Boolean) {
+        synchronized(admissionLock) {
+            playbackAdmissionRevision++
+            playbackActive = value
+        }
+        signal.trySend(Unit)
+    }
+
+    /** A disposed player may still own a non-interruptible tracking decoder. */
+    fun releasePlaybackWhenIdle(awaitIdle: suspend () -> Unit) {
+        val revision = synchronized(admissionLock) { playbackAdmissionRevision }
+        scope.launch {
+            try {
+                awaitIdle()
+                synchronized(admissionLock) {
+                    // A new player/selection may have acquired admission while release waited.
+                    if (revision == playbackAdmissionRevision) {
+                        playbackAdmissionRevision++
+                        playbackActive = false
+                    }
+                }
+                signal.trySend(Unit)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                // Keep admission closed if native resource release could not be established.
+                throw cancelled
+            } catch (_: Exception) {
+                // Fail closed; a later explicit playback/AI action can re-establish admission.
+            }
+        }
+    }
 
     /** Call before preparing playback: waits until the active inference, decoder and encoder are released. */
     suspend fun awaitPlaybackReady() { setPlaybackActive(true); isProcessing.first { !it } }

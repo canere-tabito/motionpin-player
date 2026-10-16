@@ -3,8 +3,6 @@ package com.caneretabito.motionpin.tracking
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.google.mediapipe.tasks.core.BaseOptions
-import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetector
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -19,6 +17,24 @@ import java.security.MessageDigest
  */
 @RunWith(AndroidJUnit4::class)
 class OfflineTrackingModelsTest {
+    @Test fun imageWrapperOwnsPixelsAndPreviewMustHaveIndependentStorage() {
+        val preview = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        preview.eraseColor(android.graphics.Color.RED)
+        val inference = checkNotNull(preview.copy(Bitmap.Config.ARGB_8888, false))
+        try {
+            BitmapImageBuilder(inference).build().use {
+                assertFalse(inference.isRecycled)
+                assertEquals(android.graphics.Color.RED, inference.getPixel(8, 8))
+            }
+            assertTrue("Pinned MediaPipe releases its Bitmap container", inference.isRecycled)
+            assertFalse("Displayed preview must remain alive after inference", preview.isRecycled)
+            assertEquals(android.graphics.Color.RED, preview.getPixel(8, 8))
+        } finally {
+            if (!inference.isRecycled) inference.recycle()
+            preview.recycle()
+        }
+    }
+
     @Test fun exactBundledModelsLoadAndInferWithoutNetworkPermission() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals(PackageManager.PERMISSION_DENIED,
@@ -42,18 +58,24 @@ class OfflineTrackingModelsTest {
             }
             val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
             assertEquals(identity.second, actualHash)
-            val options = ObjectDetector.ObjectDetectorOptions.builder()
-                .setBaseOptions(BaseOptions.builder().setModelAssetPath(quality.modelFile).build())
-                .setRunningMode(RunningMode.IMAGE)
-                .setCategoryAllowlist(listOf("person"))
-                .setMaxResults(12)
-                .build()
-            val image = Bitmap.createBitmap(448, 448, Bitmap.Config.ARGB_8888)
-            try {
-                ObjectDetector.createFromOptions(context, options).use {
-                    assertNotNull(it.detect(BitmapImageBuilder(image).build()))
+            ObjectDetector.createFromOptions(context, DancerTracker.detectorOptions(quality)).use { detector ->
+                // Exercise both displayed orientations and repeated MPImage ownership, using the
+                // exact production allowlist/threshold/options. This is not a person recall test.
+                for ((width, height) in listOf(640 to 360, 360 to 640, 448 to 448)) {
+                    repeat(3) {
+                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        try {
+                            BitmapImageBuilder(bitmap).build().use { image ->
+                                val detections = detector.detect(image).detections()
+                                assertNotNull(detections)
+                                assertTrue(detections.all { detection ->
+                                    detection.categories().all { it.categoryName() == "person" }
+                                })
+                            }
+                        } finally { if (!bitmap.isRecycled) bitmap.recycle() }
+                    }
                 }
-            } finally { image.recycle() }
+            }
         }
     }
 }

@@ -174,3 +174,24 @@ These are **NOT_RUN** until the actual updated APK is tested.
 Keep normal 4K playback, 4K SDR AI and HDR AI outcomes separate. List unsupported
 features explicitly. A passing host unit test or artifact check never substitutes
 for an unperformed device case.
+
+## Tracking upgrade handoff (2026-10-16)
+
+No APK/instrumentation APK was generated in this pass. Compile-only Android tests
+are not executed device tests. Follow [TRACKING_PRE_APK_QUALITY_GATE.md](TRACKING_PRE_APK_QUALITY_GATE.md)
+after authorization to build. Include the new numbered target/overlap confirmation
+Compose tests and `OfflineTrackingModelsTest` with production detector options.
+
+For independently annotated footage, use the CSV protocol and scorer in
+[TRACKING_SCENARIO_EVALUATION.md](TRACKING_SCENARIO_EVALUATION.md). Preserve clip
+license/hash, actual requested/returned frame-time uncertainty, target visibility
+and candidate identity labels. Measure wrong matches, ID changes, correctly
+covered visible observations, unavailable duration and camera containment/jitter.
+Do not count an intentional safe stop as successful uninterrupted tracking.
+
+Additional resource regression: start target lookahead, request RIFE, then cancel,
+background/foreground and immediately select again. Verify old results never
+publish, only one tracking native session exists, and RIFE starts after tracking
+and playback decoders release. Repeat manual hold → short seek → resume within
+110ms, and 3-second replay with induced drops (pressure must not reset every loop).
+Test source/cache comparison and pin capture at 2× against the live source clock.

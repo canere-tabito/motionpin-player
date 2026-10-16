@@ -1,0 +1,17 @@
+// Use with --init-script for the pre-APK gate. Check the resolved graph, including
+// transitive tasks, before any task executes. Packaging Android resources for
+// compilation is permitted; producing/installing/signing an APK or bundle is not.
+gradle.taskGraph.whenReady { graph ->
+    def forbidden = graph.allTasks.findAll { task ->
+        def name = task.name.toLowerCase(Locale.ROOT)
+        name.startsWith('assemble') ||
+            (name.startsWith('bundle') && !name.endsWith('jar')) ||
+            (name.startsWith('package') && !name.endsWith('resources')) ||
+            name.startsWith('sign') || name.startsWith('validatesigning') ||
+            name.startsWith('install') || name.startsWith('publish')
+    }
+    if (!forbidden.isEmpty()) {
+        throw new GradleException('Pre-APK gate refused artifact/signing tasks: ' +
+            forbidden.collect { it.path }.join(', '))
+    }
+}

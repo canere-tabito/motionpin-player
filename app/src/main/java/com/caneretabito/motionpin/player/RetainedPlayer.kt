@@ -39,6 +39,8 @@ data class PlaybackState(
     val decoderHardware: String = "未確認",
     val renderedFrames: Int = 0,
     val droppedFrames: Int = 0,
+    /** Changes on seeks, loops and media switches, including jumps shorter than one sample. */
+    val timelineRevision: Long = 0,
     val error: String? = null,
 )
 
@@ -58,9 +60,15 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         val viewport: VideoViewport, val muted: Boolean, val aspect: Float)
     private var replayRestore: ReplayRestore? = null
     private val decoderActive = MutableStateFlow(false)
+    private var timelineRevision = 0L
 
     init {
         exo.addListener(object : Player.Listener {
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                timelineRevision++
+                update { copy(timelineRevision = this@RetainedPlayer.timelineRevision,
+                    sourcePositionUs = liveSourcePositionUs()) }
+            }
             override fun onIsPlayingChanged(isPlaying: Boolean) { update { copy(isPlaying = isPlaying) } }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 update { copy(buffering = playbackState == Player.STATE_BUFFERING, ended = playbackState == Player.STATE_ENDED) }
@@ -97,6 +105,7 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
     fun open(uri: Uri, fullDurationUs: Long, timeline: PlaybackTimeline, positionUs: Long, speed: Float,
              loop: Boolean, viewport: VideoViewport, muted: Boolean, aspect: Float, play: Boolean = true,
              clipMediaStartUs: Long? = null, clipMediaEndUs: Long? = null) {
+        timelineRevision++
         replayRestore = null
         this.uri = uri
         this.timeline = timeline
@@ -118,7 +127,8 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         exo.volume = if (muted || timeline.cached) 0f else 1f
         mutable.value = PlaybackState(sourcePositionUs = positionUs.coerceIn(0, fullDurationUs - 1), durationUs = fullDurationUs,
             cached = timeline.cached, requestedSpeed = speed, muted = muted || timeline.cached, loop = loop,
-            viewport = viewport.bounded(), fill = mutable.value.fill, aspect = aspect)
+            viewport = viewport.bounded(), fill = mutable.value.fill, aspect = aspect,
+            timelineRevision = timelineRevision)
         exo.prepare()
         exo.playWhenReady = play
     }
@@ -134,10 +144,11 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         val source = uri ?: return false
         val activeTimeline = timeline ?: return false
         val old = mutable.value
-        val end = old.sourcePositionUs.coerceIn(activeTimeline.sourceStartUs + 1L, activeTimeline.sourceEndUs)
+        val livePositionUs = liveSourcePositionUs()
+        val end = livePositionUs.coerceIn(activeTimeline.sourceStartUs + 1L, activeTimeline.sourceEndUs)
         val start = maxOf(activeTimeline.sourceStartUs, end - durationUs.coerceAtLeast(500_000L))
         if (end - start < 250_000L) return false
-        val restore = ReplayRestore(source, activeTimeline, old.sourcePositionUs, sourceFullDurationUs,
+        val restore = ReplayRestore(source, activeTimeline, livePositionUs, sourceFullDurationUs,
             old.requestedSpeed, old.loop, old.viewport, old.muted, old.aspect)
         val loopTimeline = PlaybackTimeline(start, end, activeTimeline.bakedSpeed, activeTimeline.cached)
         val mediaStart = if (activeTimeline.cached) activeTimeline.toPlayerUs(start) else null
@@ -168,8 +179,16 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         timeline?.toSourceUs(exo.currentPosition.coerceAtLeast(0L) * 1_000L)
             ?: mutable.value.sourcePositionUs
 
-    fun seekSource(positionUs: Long) { timeline?.let { exo.seekTo(it.toPlayerUs(positionUs) / 1_000); update { copy(sourcePositionUs = it.toSourceUs(it.toPlayerUs(positionUs))) } } }
-    fun seekBy(deltaUs: Long) = seekSource(mutable.value.sourcePositionUs + deltaUs)
+    fun boundedSourcePositionUs(positionUs: Long): Long =
+        timeline?.let { it.toSourceUs(it.toPlayerUs(positionUs)) } ?: positionUs.coerceAtLeast(0L)
+
+    fun seekSource(positionUs: Long) { timeline?.let {
+        // Reset even if a seek resolves to the same millisecond and Media3 emits no callback.
+        timelineRevision++
+        exo.seekTo(it.toPlayerUs(positionUs) / 1_000)
+        update { copy(sourcePositionUs = boundedSourcePositionUs(positionUs), timelineRevision = this@RetainedPlayer.timelineRevision) }
+    } }
+    fun seekBy(deltaUs: Long) = seekSource(liveSourcePositionUs() + deltaUs)
     fun setSpeed(speed: Float) {
         update { copy(requestedSpeed = speed) }
         if (!temporarySpeed) exo.playbackParameters = PlaybackParameters(timeline?.effectivePlayerSpeed(speed) ?: speed, 1f)

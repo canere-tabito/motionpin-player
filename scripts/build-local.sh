@@ -42,6 +42,7 @@ proxy_args+=("-Dhttp.nonProxyHosts=localhost|127.*|[::1]")
 
 cd "$project_dir"
 if [[ "$#" -eq 0 ]]; then
-    set -- testDebugUnitTest lintRelease assembleRelease
+    # APK generation/signing is a separate, explicitly authorized delivery step.
+    set -- compileDebugKotlin compileReleaseKotlin compileDebugAndroidTestKotlin testDebugUnitTest lintRelease
 fi
 exec ./gradlew --no-daemon "${proxy_args[@]}" "$@"

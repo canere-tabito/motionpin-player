@@ -2,6 +2,7 @@ package com.caneretabito.motionpin
 
 import com.caneretabito.motionpin.player.PlaybackTimeline
 import com.caneretabito.motionpin.player.VideoViewport
+import com.caneretabito.motionpin.player.ViewportGeometry
 import com.caneretabito.motionpin.player.parseSecondsUs
 import com.caneretabito.motionpin.player.viewportTransform
 import org.junit.Assert.*
@@ -51,5 +52,37 @@ class PlaybackGeometryTest {
         assertNull(parseSecondsUs("NaN"))
         assertNull(parseSecondsUs("1.0000001"))
         assertNull(parseSecondsUs("9223372036854775807"))
+    }
+
+    @Test fun fitLetterboxAndFillCropHaveDifferentVisibleSourceFractions() {
+        val fit = ViewportGeometry(1080f, 1920f, 16f / 9f, false)
+        val fill = fit.copy(fill = true)
+        assertEquals(1f, fit.visibleWidth(1f), .00001f)
+        assertEquals(1f, fit.visibleHeight(1f), .00001f)
+        assertEquals(1f, fit.visibleHeight(2f), .00001f) // zoom consumes vertical letterbox first
+        assertEquals(.31640625f, fill.visibleWidth(1f), .00001f)
+        assertEquals(1f, fill.visibleHeight(1f), .00001f)
+        assertEquals(.5f, fill.visibleHeight(2f), .00001f)
+    }
+
+    @Test fun invalidStoredViewportAndTransientZeroLayoutNeverReturnNaNTransforms() {
+        val invalid = VideoViewport(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)
+        assertEquals(VideoViewport(), invalid.bounded())
+        val transform = viewportTransform(0f, Float.NaN, Float.NaN, true, invalid)
+        assertTrue(transform.baseWidth.isFinite() && transform.baseWidth > 0f)
+        assertTrue(transform.baseHeight.isFinite() && transform.baseHeight > 0f)
+        assertTrue(transform.translateX.isFinite() && transform.translateY.isFinite())
+    }
+
+    @Test fun sourceEdgesStayAtContainerEdgesAfterLargePanInFitOrFill() {
+        for (fill in listOf(false, true)) for (edge in listOf(0f, 1f)) {
+            val geometry = ViewportGeometry(1080f, 1920f, 16f / 9f, fill)
+            val view = VideoViewport(4f, edge, edge)
+            val transform = viewportTransform(geometry.width, geometry.height, geometry.aspect, fill, view)
+            val sourceEdgeX = geometry.width / 2f + (edge - .5f) * transform.baseWidth * view.zoom + transform.translateX
+            val sourceEdgeY = geometry.height / 2f + (edge - .5f) * transform.baseHeight * view.zoom + transform.translateY
+            assertEquals(edge * geometry.width, sourceEdgeX, .001f)
+            assertEquals(edge * geometry.height, sourceEdgeY, .001f)
+        }
     }
 }

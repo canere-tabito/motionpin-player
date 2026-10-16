@@ -1,23 +1,101 @@
 # Validation report
 
-## Pre-APK dancer tracker quality passes (2026-10-16)
+## 現行：ダンサー追尾の根本修正・APK生成前検証（2026-10-16）
 
-New code: dual EfficientDet-Lite2/Lite0 detectors, progressive ahead-of-playback sampling, stricter identity matching, gap-limited trajectory, full-body auto-fit and stabilized framing, source-preserving performance/thermal gates, annotated target picker and background lifecycle cancellation.
+対象：`feat/motionpin-player`、`0.2.0-alpha1` / versionCode 2 / `com.caneretabito.motionpin`。
+開始HEADは `cfc819794f9b811268398b617b63465b3caf9e29`、未コミット変更なし。
+実際の本番ソースを改修・コンパイル・検証しました。**APK生成・署名・Release公開・GitHub Actions実行は行っていません。実機品質の合格報告ではありません。**
 
-- **PASS (host logic smoke only):** Kotlin/JVM 1.9.0 local test compilation with a mirrored copy of pure TrackingMath core and a VideoViewport stub, 18 hand-authored deterministic assertions on motion/ambiguity/missing frames/crop behavior. A stale expectation about full-body zoom was corrected after the first run.
-- **NOT_RUN:** Gradle compilation/test task for actual full Android sources, MediaPipe Android native graph loading/inference, both model asset retrieval and final APK verification, device tracking quality/4K60 thermal/crowd footage.
-- **NO APK CREATED:** This was deliberately a pre-APK source-quality pass, not release delivery. See docs/TRACKING_PRE_APK_QUALITY_GATE.md.
+環境：Linux x86_64、Temurin JDK 21.0.12.1+1、Gradle 8.11.1、AGP 8.9.2、Kotlin 2.1.20、API35 / Build Tools35.0.0、NDK28.1、CMake3.22.1。
+独立シナリオ評価はキャッシュ済みKotlin2.0.20コンパイラで同じ本番ソースをコンパイルしました。
+Android端末・エミュレータ・ハードウェアGPUは利用できず、`/dev/kvm`、`/dev/dri`、USB機器パスもありません。
+adbはこの環境の書込み不可HOMEに`.android`を作ろうとして失敗しました。HOMEの変更、鍵の代用、APK生成で回避していません。
 
-## Post-report additions — NOT_RUN (2026-10-16)
+### 実装した改善と確認した根本原因
 
-The user-requested dancer auto-follow (MediaPipe model integration), instant 3-second
-replay and cross-video scene reels were added to the GitHub source **after** the
-original 0.1.0 tests recorded below. None of the original PASS results certify
-this new code. Local Gradle/Android build, new model download/hash verification,
-Android person detection, device playback continuity, and signed upgrade are all
-**NOT_RUN** in this session. The initial APK does not include these changes.
-No GitHub Actions jobs were started.
+- 外観特徴の欠落・NaNを「完全一致」と扱わず拒否。予測位置・IoU・体形・元の衣装と短期平均・競合人物を用いて同衣装の誤切替を抑制。遮蔽猶予はフレーム数から元動画時刻に変更。
+- 全身・上半身・脚を実際の表示比率に合わせて構成。全身中のみ一時FIT、停止中のカメラ移動を解消、速度依存の追従、余白と安全上限を分離したズーム平滑化、手動固定からの復帰を実装。
+- 検査済み時刻から解析を継続し、見失ったフレームの繰返しデコードを防止。範囲外シーク・強い場面変化は再選択。旧結果の公開を世代と同期で防ぎ、ネイティブ処理を直列化。
+- 実AARからMPImageが入力Bitmapを解放する仕様を確認。外観取得まで画像を保持し、選択プレビューは独立管理。RIFEへ資源を渡す際は追尾と再生の実解放を待つ。
+- バッファリング・drop・低電池・省電力・熱で解析を待機。3秒リプレイによって負荷観測窓が無効になる問題も修正。再生ファイル・画質・モデルを自動で変更しない。
+- 番号付き人物枠、小さい人物のタップ補助、重複枠の切替と確定操作、再選択・固定・構図変更を整理。手動操作を自動カメラが上書きする問題を解消。
+- **実際のmerged Manifestで、MediaPipeの間接依存がINTERNET権限を追加する重大な方針違反を発見。** INTERNETとDataTransportのアップロード用コンポーネントを除去し、debug/release双方のマージ結果を必ず検査するGradleゲートを追加。必要な依存クラスとMedia3のACCESS_NETWORK_STATEは維持。
 
+根拠と技術選択は [TRACKING_IMPLEMENTATION_NOTES.md](docs/TRACKING_IMPLEMENTATION_NOTES.md)。
+applicationId・version・Room schema・バックアップ形式・RIFEモデル/映像パイプラインは維持しています。
+RIFEの変更は追尾との資源引渡し部分に限定しました。
+
+### 実行結果
+
+| 検証 | 結果 | 実際に確認した範囲 |
+|---|---|---|
+| 依存解決とAndroid全体のKotlinコンパイル | PASS | `compileDebugKotlin`、`compileReleaseKotlin`。Room/kapt・リソース/Manifestを含む実プロジェクト |
+| Androidテストのコンパイル | PASS | `compileDebugAndroidTestKotlin`。モデル/画像所有権とCompose人物選択の計4テスト。**実行はNOT_RUN** |
+| JVM単体テスト | PASS | `testDebugUnitTest`：14 suite、103件、失敗/エラー/skip各0。開始版55件から48件追加。追尾・カメラ・幾何・資源制御・人物選択と既存timeline/backup/reel/quality/pipeline検査 |
+| Release lint | PASS | `lintRelease`：0 errors / 28 warnings。依存更新15、KTX提案10、arm64限定1、kapt提案1、applicationContextを保持する既存singleton警告1 |
+| マージ後オフライン方針 | PASS | `verifyDebugOfflineManifest` / `verifyReleaseOfflineManifest`。修正前Manifestを拒否することも確認。INTERNET・DataTransport送信用service/receiverなし |
+| APK禁止タスクグラフ | PASS | 本検証の全依存グラフを事前確認。assemble要求のdry-runはガードが実行前に拒否。APK/AAB/keystore生成なし |
+| 実Lite0/Lite2モデルの取得・検証 | PASS | 両方の実サイズ・SHA-256一致、float32入力/出力/metadata/ラベルを独立検査 |
+| 実モデルのホスト推論 | PASS（ホスト限定） | MediaPipe1.1.0 CPUで両モデルをロード。空画像0検出、NASA公開人物画像を検出。Lite2では低スコア誤検出も観測 |
+| Android AAR/API検査 | PASS（静的限定） | 1.1.0の実API、minSdk24≤29、arm64 JNI、16KB ELF LOAD alignment、Bitmap所有権。Androidロード・APK ZIP配置はNOT_RUN |
+| 本番コードの旧新シナリオ比較 | PASS | 17合成シナリオと5ゲート、ラベル付きCSV再入力一致。旧コードは開始SHAから独立コンパイル。ミラー実装ではない |
+| 動画フィクスチャ | PASS（生成・形式確認） | 自作の幾何学動画：H.264 / 640×360 / 30fps / 151フレーム / 5.033333秒。ffprobe確認。人物検出精度の素材ではない |
+| 差分・スクリプト検査 | PASS | `git diff --check`、関連shell/Python構文。元動画・鍵・APK・workflowの追加なし |
+| Android実行・実写ダンス・4K60/HDR性能 | NOT_RUN | 適格実機と注釈付き実写素材なし。端末上での描画、推論、熱、AV同期、長時間RAMは未測定 |
+
+完全なGradle検証は最終回 `BUILD SUCCESSFUL`。最初のSDK取得は破損ZIPで失敗し再取得で解消。
+編集中の初回テストはズーム揺れ回帰1件がFAIL、最終ソースを再コンパイルした全103件がPASS。
+初回のmerged Manifest検査はINTERNET混入でFAIL、実装修正後のdebug/release両方がPASS。
+これらの初回失敗を未実施や最初から成功したものとして扱いません。
+
+機械可読記録：[pre-apk-build-summary.json](docs/validation/pre-apk-build-summary.json)。
+詳細ログはローカルの`artifacts/validation/`、JUnit/Lintは`app/build/`。
+モデルの正確なhash、形式、誤検出と再現方法は [TRACKING_HOST_MODEL_VALIDATION.md](docs/TRACKING_HOST_MODEL_VALIDATION.md)。
+
+### 定量比較：合成入力でのロジック検証
+
+| 指標 | 開始版 | 改修後 |
+|---|---:|---:|
+| 17シナリオの誤った人物への関連付け | 5 | 0 |
+| 受理した人物IDの変更 | 5 | 0 |
+| 同衣装交差で正しく追えた観測 | 17/20 | 19/20 |
+| 2/4/8/12人候補の正しい観測（各条件） | 40/40 | 40/40 |
+| 50ms刻みの5回欠落後、検出復帰後の正しい観測 | 0/7 | 7/7 |
+| 急反転＋同衣装の競合 | 正解1・誤追尾3 | 正解1・曖昧3 |
+| 急接近の全身クロップ違反フレーム | 30 | 0 |
+| 検出揺れ時の中心加速度RMS（正規化座標/s²） | 0.747753 | 0.528774 |
+| 同条件の最大ズーム変化/約30Hzサンプル | 0.002367 | 0.001947 |
+
+人物位置とIDを生成した合成検出トレースでの値です。実写検出率・ID保証・端末フレーム落ち率を示しません。
+急反転例は誤追尾を止める代わりに曖昧状態を保持します。滑らかな単独移動の中心加速度RMSは
+0.041040→0.042172、急接近の最大ズーム変化は0.018054→0.037749です。
+後者は人物切れを防ぐための安全制限で、全条件で滑らかさが改善したとは主張しません。
+
+全結果・定義・ソースhash・実動画CSV手順：
+[TRACKING_SCENARIO_EVALUATION.md](docs/TRACKING_SCENARIO_EVALUATION.md)、
+[比較CSV](docs/validation/tracking-scenario-comparison.csv)、
+[証跡JSON](docs/validation/tracking-scenario-provenance.json)。
+
+### 処理負荷・残存リスク・引き継ぎ
+
+解析は最大640px画像、1ネイティブセッション、6秒先読み、最大2,400アンカーに制限。
+重複フレーム取得と取消時の重複稼働を抑制し、熱・電池・再生負荷に譲る実装を検証しました。
+**AndroidでのCPU/GPU時間、ピークRAM、発熱、電池、4K60 OFF/ONの改善量は未測定**です。
+モデル/取得器を各窓で作り直すコストやMMRの反復seekによる競合は残るため、低負荷になったという性能保証はしません。
+
+必須の次段階：適格実機で両モデルのオフラインロード、人物選択/TalkBackと4方向SurfaceView、
+同衣装/遮蔽/照明/カットの実写追尾、H.264/HEVC 4K60/HDRのOFF/Lite0/Lite2比較、
+60秒と10分以上のdrop/AV同期/RAM/熱、バックグラウンド・取消・RIFE排他・replay/pin/reel・更新保持を実測。
+MMRの実PTS/180度回転、似た場面のカット、長期遮蔽、全身ボックス外の手足、複数Activityの資源所有も未保証です。
+
+[TRACKING_PRE_APK_QUALITY_GATE.md](docs/TRACKING_PRE_APK_QUALITY_GATE.md) がAPK生成段階への引き継ぎ文書です。
+APK作成・最適化/R8・ZIP検査・端末テスト・正本署名・公開は、次回の明示指示とそれぞれのゲートに従います。
+実測していない項目を目標値（例：drop1%未満）で埋めていません。
+GitHub最終コミットと変更一覧は納品時のブランチ確認結果で示します。
+
+---
+
+## 以下は過去の0.1.0検証記録（今回のAPK生成・実機合格を意味しない）
 
 確認日: 2026-10-16 UTC。対象: MotionPin 0.1.0 / versionCode 1 / `com.caneretabito.motionpin`。
 **正式完成・実機合格・署名付き配布を認定するレポートではありません。**

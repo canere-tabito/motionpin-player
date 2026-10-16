@@ -24,7 +24,9 @@ data class PlaybackTimeline(
 
 /** Center coordinates refer to the video after its rotation metadata has been applied. */
 data class VideoViewport(val zoom: Float = 1f, val centerX: Float = .5f, val centerY: Float = .5f) {
-    fun bounded() = copy(zoom = zoom.coerceIn(1f, 8f), centerX = centerX.coerceIn(0f, 1f), centerY = centerY.coerceIn(0f, 1f))
+    fun bounded() = copy(zoom = zoom.takeIf { it.isFinite() }?.coerceIn(1f, 8f) ?: 1f,
+        centerX = centerX.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: .5f,
+        centerY = centerY.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: .5f)
     fun pan(dx: Float, dy: Float, videoWidth: Float, videoHeight: Float): VideoViewport = copy(
         centerX = centerX - dx / max(1f, videoWidth * zoom),
         centerY = centerY - dy / max(1f, videoHeight * zoom),
@@ -33,18 +35,35 @@ data class VideoViewport(val zoom: Float = 1f, val centerX: Float = .5f, val cen
 
 data class ViewportTransform(val baseWidth: Float, val baseHeight: Float, val translateX: Float, val translateY: Float)
 
+/** Layout and camera share this geometry, including FIT letterboxing and FILL clipping. */
+data class ViewportGeometry(
+    val containerWidth: Float = 1f,
+    val containerHeight: Float = 1f,
+    val aspect: Float = 1f,
+    val fill: Boolean = false,
+) {
+    val width: Float get() = containerWidth.takeIf { it.isFinite() && it > 0f } ?: 1f
+    val height: Float get() = containerHeight.takeIf { it.isFinite() && it > 0f } ?: 1f
+    val videoAspect: Float get() = aspect.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+    val baseWidth: Float get() = if (fill) max(width, height * videoAspect) else min(width, height * videoAspect)
+    val baseHeight: Float get() = baseWidth / videoAspect
+    // Ratios intentionally may exceed 1: zooming can first consume a FIT letterbox.
+    val widthAtUnitZoom: Float get() = width / baseWidth
+    val heightAtUnitZoom: Float get() = height / baseHeight
+    fun visibleWidth(zoom: Float) = (widthAtUnitZoom / zoom).coerceIn(0f, 1f)
+    fun visibleHeight(zoom: Float) = (heightAtUnitZoom / zoom).coerceIn(0f, 1f)
+}
+
 fun viewportTransform(containerWidth: Float, containerHeight: Float, aspect: Float, fill: Boolean, view: VideoViewport): ViewportTransform {
-    val safeAspect = aspect.takeIf { it > 0 && it.isFinite() } ?: (16f / 9f)
-    val fitWidth = if (containerWidth / max(1f, containerHeight) > safeAspect) containerHeight * safeAspect else containerWidth
-    val fitHeight = fitWidth / safeAspect
-    val fillScale = if (fill) max(containerWidth / max(1f, fitWidth), containerHeight / max(1f, fitHeight)) else 1f
-    val width = fitWidth * fillScale
-    val height = fitHeight * fillScale
-    val xExtent = max(0f, (width * view.zoom - containerWidth) / 2f)
-    val yExtent = max(0f, (height * view.zoom - containerHeight) / 2f)
+    val geometry = ViewportGeometry(containerWidth, containerHeight, aspect, fill)
+    val bounded = view.bounded()
+    val width = geometry.baseWidth
+    val height = geometry.baseHeight
+    val xExtent = max(0f, (width * bounded.zoom - geometry.width) / 2f)
+    val yExtent = max(0f, (height * bounded.zoom - geometry.height) / 2f)
     return ViewportTransform(width, height,
-        ((.5f - view.centerX) * width * view.zoom).coerceIn(-xExtent, xExtent),
-        ((.5f - view.centerY) * height * view.zoom).coerceIn(-yExtent, yExtent))
+        ((.5f - bounded.centerX) * width * bounded.zoom).coerceIn(-xExtent, xExtent),
+        ((.5f - bounded.centerY) * height * bounded.zoom).coerceIn(-yExtent, yExtent))
 }
 
 fun formatTimestamp(us: Long, millis: Boolean = false): String {

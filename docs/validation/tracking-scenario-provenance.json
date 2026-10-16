@@ -1,0 +1,48 @@
+{
+  "current": {
+    "revision": "working_tree",
+    "source_sha256": {
+      "app/src/main/java/com/caneretabito/motionpin/player/PlaybackGeometry.kt": "1b91ae8b1a15b994ec3cd25efa18285a34f44df7cd1ac8f7ef3af9b3276fd46a",
+      "app/src/main/java/com/caneretabito/motionpin/tracking/TrackingMath.kt": "c4d3993134f024e0bc038271a38c17494393ceb8981ddeaab814be3ca4f9b42c",
+      "app/src/main/java/com/caneretabito/motionpin/tracking/StablePersonMatcher.kt": "857b2aa9f72cdff74f85438998b91e24edf1c4f286c28c8dd59f84fda9ef26a6"
+    },
+    "harness_sha256": "5052c519b9aad2a9d5132a614b69cc2633eb08379203a8ee51f2ec3106d5ab8b",
+    "evaluation_kind": "synthetic_detection_trace",
+    "detector_inference_executed": false,
+    "android_executed": false
+  },
+  "baseline": {
+    "revision": "cfc819794f9b811268398b617b63465b3caf9e29",
+    "source_sha256": {
+      "app/src/main/java/com/caneretabito/motionpin/player/PlaybackGeometry.kt": "19d307be25bbea4acaaf4c2a4e96bb44dc34bc1be2c9d3cd7d442a3a3030262c",
+      "app/src/main/java/com/caneretabito/motionpin/tracking/TrackingMath.kt": "042f31ad0783e65a4e37670ec116a6ebb2d65388a9023bfcf848e8d9838af824"
+    },
+    "harness_sha256": "5052c519b9aad2a9d5132a614b69cc2633eb08379203a8ee51f2ec3106d5ab8b",
+    "evaluation_kind": "synthetic_detection_trace",
+    "detector_inference_executed": false,
+    "android_executed": false
+  },
+  "executed_utc_date": "2026-10-16",
+  "command": "python3 scripts/evaluate-tracking.py --baseline cfc819794f9b811268398b617b63465b3caf9e29 --check",
+  "regression_gates": {
+    "no_false_associations": true,
+    "full_group_continuity": true,
+    "dense_sampling_recovers": true,
+    "seek_requires_reselection": true,
+    "full_body_approach_contained": true
+  },
+  "trace_csv_round_trip": "PASS",
+  "geometric_video_fixture": {
+    "status": "PASS",
+    "codec": "h264",
+    "width": 640,
+    "height": 360,
+    "fps": "30/1",
+    "frames": 151,
+    "duration_seconds": 5.033333,
+    "size_bytes": 33141,
+    "sha256": "db04577489f2ca2dd1364fb0fc165244f176de4710b664bd4bcf11029c130656",
+    "person_detector_evaluation": false,
+    "android_playback": "NOT_RUN"
+  }
+}

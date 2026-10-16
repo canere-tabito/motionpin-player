@@ -28,7 +28,7 @@ HDR AIは成立していないため拒否します。P010／Main10能力の調�
 
 ## 追加した鑑賞機能の使い方（実機未検証）
 
-- 再生画面の照準アイコン → 映像上の黄色い人物枠から1人選択 → 位置を先読み解析して、約1.8倍以上のズーム中心を移動。見失う／交差する場合は再選択。処理は動画端末内で完結。
+- 再生画面の照準アイコン → 映像上の黄色い人物枠から1人選択 → 位置を先読み解析して、人物の大きさと画面に合わせて構図・ズーム中心を調整。見失う／交差する場合は再選択。処理は動画端末内で完結。
 - 再生操作の「直前3秒リプレイ」を押すと直前の数秒だけを繰り返し、もう一度押すと元の再生範囲へ戻ります。
 - 「ピン」タブの「シーンリール」で作成し、各区間ピンのメニューから追加。順番変更・シャッフル・ループ再生が可能です。
 
@@ -52,11 +52,12 @@ HDR AIは成立していないため拒否します。P010／Main10能力の調�
 ```sh
 scripts/setup-native.sh
 scripts/setup-tracker-model.sh # Gradle preBuildからも実行・hash検証
-scripts/build-local.sh testDebugUnitTest lintRelease assembleRelease
-python3 scripts/verify-artifact.py app/build/outputs/apk/release/app-release-unsigned.apk \
-  --mode build --sdk "$ANDROID_HOME" --model-manifest MODEL_MANIFEST.json
-python3 scripts/verify-tracker-apk.py app/build/outputs/apk/release/app-release-unsigned.apk
+scripts/validate-pre-apk.sh # 両variant・AndroidテストのKotlinコンパイル、JVMテスト、release lint。APK生成なし
+python3 scripts/evaluate-tracking.py --baseline cfc819794f9b811268398b617b63465b3caf9e29
 ```
+
+現在はAPK生成前の検証段階です。assemble/package・署名・公開は次回の明示的な指示まで実行しません。
+改修理由は [TRACKING_IMPLEMENTATION_NOTES.md](docs/TRACKING_IMPLEMENTATION_NOTES.md)、再現手順と残ゲートは [TRACKING_PRE_APK_QUALITY_GATE.md](docs/TRACKING_PRE_APK_QUALITY_GATE.md) を参照してください。
 
 releaseビルドにはdebug鍵へのフォールバックがありません。未署名APKはインストール／公開用ではありません。
 正本鍵・独立して記録した証明書SHA-256・ユーザー管理の恒久バックアップが揃った場合だけ

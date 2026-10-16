@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -38,10 +39,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var continueAfterTargetSelection = false
     private var resumeAfterTrackingLookahead = false
     private var trackingOriginalViewport: VideoViewport? = null
-    private var trackingFramesBaseline = 0
-    private var trackingDroppedBaseline = 0
-    private var trackingMonitorAtMs = 0L
-    private var trackerOverloadedUntilMs = 0L
+    private val trackingPressure = PlaybackPressureMonitor()
+    private var trackerOverloaded = false
+    private var trackingContainerWidth = 1f
+    private var trackingContainerHeight = 1f
+    private var trackingTimelineRevision = -1L
     val videos = repository.videos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val pins = repository.pins.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val channels = repository.channels.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -67,6 +69,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var display: Display? = null
     private var openJob: Job? = null
     private var playJob: Job? = null
+    private var selectionRequest: Job? = null
     private var defaultSpeed = 1f
     private var defaultMuted = false
 
@@ -86,25 +89,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             player.state.collect { playing ->
                 val current = currentVideo.value ?: return@collect
                 val nowMs = SystemClock.elapsedRealtime()
-                if (trackingMonitorAtMs == 0L || playing.renderedFrames < trackingFramesBaseline ||
-                    playing.droppedFrames < trackingDroppedBaseline) {
-                    trackingMonitorAtMs = nowMs
-                    trackingFramesBaseline = playing.renderedFrames
-                    trackingDroppedBaseline = playing.droppedFrames
-                }
-                if (nowMs - trackingMonitorAtMs >= 3000L) {
-                    val done = playing.renderedFrames - trackingFramesBaseline
-                    val skipped = playing.droppedFrames - trackingDroppedBaseline
-                    if (done + skipped >= 50 && skipped >= 4 &&
-                        skipped.toFloat() / (done + skipped) > .025f) {
-                        trackerOverloadedUntilMs = nowMs + 10_000L
-                    }
-                    trackingFramesBaseline = playing.renderedFrames
-                    trackingDroppedBaseline = playing.droppedFrames
-                    trackingMonitorAtMs = nowMs
-                }
-                tracking.maybeExtend(current, playing.sourcePositionUs, playing.isPlaying,
-                    nowMs < trackerOverloadedUntilMs)
+                val waitingForFrames = playing.buffering && player.exo.playWhenReady
+                trackerOverloaded = trackingPressure.sample(nowMs, playing.renderedFrames,
+                    playing.droppedFrames, playing.isPlaying, waitingForFrames)
+                tracking.maybeExtend(current, player.liveSourcePositionUs(),
+                    playing.isPlaying || waitingForFrames, trackerOverloaded)
                 if (!playing.ended) reelAdvancing = false
                 else if (activeReel.value != null && !reelAdvancing) {
                     reelAdvancing = true
@@ -118,21 +107,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 val video = currentVideo.value
                 val track = tracking.state.value
+                val playback = player.state.value
+                val position = player.liveSourcePositionUs()
+                if (trackingTimelineRevision != playback.timelineRevision) {
+                    trackingTimelineRevision = playback.timelineRevision
+                    tracking.onTimelineDiscontinuity(position)
+                }
                 val eligible = video != null && track.videoId == video.id &&
                     track.keyframes.isNotEmpty() && !track.manualHold &&
                     track.phase in setOf("scanning", "active", "lost")
                 if (eligible && video != null) {
-                    val view = player.state.value.viewport
-                    val position = player.liveSourcePositionUs()
-                    val result = tracking.viewportAt(video.id, position, view)
+                    val view = playback.viewport
+                    val effectiveFill = playback.fill && track.framing != DancerFraming.FULL
+                    val geometry = ViewportGeometry(trackingContainerWidth, trackingContainerHeight,
+                        playback.aspect, effectiveFill)
+                    val result = tracking.viewportAt(video.id, position, view, geometry)
                     if (result != null && (abs(result.centerX - view.centerX) > .001f ||
                             abs(result.centerY - view.centerY) > .001f ||
                             abs(result.zoom - view.zoom) > .004f)) player.setViewport(result)
                 }
-                val pressure = SystemClock.elapsedRealtime() < trackerOverloadedUntilMs
                 delay(when {
                     !eligible || !player.exo.isPlaying -> 110L
-                    pressure -> 66L // prioritize decoded 4K60 over optional camera transform work
+                    trackerOverloaded -> 66L // prioritize decoded 4K60 over optional camera transform work
                     else -> 33L
                 })
             }
@@ -157,40 +153,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun notify(text: String) { message.value = text }
     fun dismissMessage() { message.value = null }
 
+    fun updateTrackingGeometry(widthPx: Float, heightPx: Float) {
+        if (widthPx.isFinite() && heightPx.isFinite() && widthPx > 0f && heightPx > 0f) {
+            trackingContainerWidth = widthPx
+            trackingContainerHeight = heightPx
+        }
+    }
+
     fun requestDancerTracking() {
         val video = currentVideo.value ?: return
+        cancelPlaybackTransition()
         if (trackingOriginalViewport == null) trackingOriginalViewport = player.state.value.viewport
         tracking.setUserZoom(player.state.value.viewport.zoom)
-        continueAfterTargetSelection = player.exo.isPlaying
+        continueAfterTargetSelection = continueAfterTargetSelection || player.exo.isPlaying
         resumeAfterTrackingLookahead = false
         player.pause()
-        tracking.requestSelection(video, player.state.value.sourcePositionUs)
+        selectionRequest = operation("人物選択の準備をしています…") {
+            // RIFE must release its codecs before a separate tracking decoder is admitted.
+            ai.awaitPlaybackReady()
+            currentCoroutineContext().ensureActive()
+            tracking.requestSelection(video, player.liveSourcePositionUs())
+        }.also { playJob = it }
     }
 
     fun changeDancerQuality(quality: TrackerQuality) {
         val video = currentVideo.value ?: return
         if (tracking.state.value.phase !in setOf("choosing", "lost")) return
-        tracking.changeQuality(video, player.state.value.sourcePositionUs, quality)
+        continueAfterTargetSelection = continueAfterTargetSelection || player.exo.isPlaying
+        resumeAfterTrackingLookahead = false
+        player.pause()
+        tracking.changeQuality(video, player.liveSourcePositionUs(), quality)
     }
     fun stepDancerPreview(deltaSeconds: Int) {
         val video = currentVideo.value ?: return
         if (tracking.state.value.phase != "choosing") return
-        val start = player.state.value.sourcePositionUs
-        val target = (start + deltaSeconds * 1_000_000L)
-            .coerceIn(0L, (video.durationUs - 1L).coerceAtLeast(0L))
+        val start = player.liveSourcePositionUs()
+        val target = player.boundedSourcePositionUs(start + deltaSeconds * 1_000_000L)
         player.seekSource(target)
         tracking.requestSelection(video, target, tracking.state.value.rotationCorrectionDegrees)
     }
     fun rotateDancerPreview() {
         val video = currentVideo.value ?: return
         if (tracking.state.value.phase != "choosing") return
-        tracking.rotatePreview(video, player.state.value.sourcePositionUs)
+        tracking.rotatePreview(video, player.liveSourcePositionUs())
     }
     fun chooseDancerFraming(framing: DancerFraming) { tracking.setFraming(framing) }
     fun holdDancerTracking() {
         val current = tracking.state.value
-        if (current.phase in setOf("active", "scanning")) {
-            if (current.manualHold) tracking.resumeFromManual(player.state.value.viewport, player.liveSourcePositionUs())
+        if (current.phase in setOf("active", "scanning", "lost") && current.keyframes.isNotEmpty()) {
+            if (current.manualHold) {
+                val position = player.liveSourcePositionUs()
+                if (trackingTimelineRevision != player.state.value.timelineRevision) {
+                    trackingTimelineRevision = player.state.value.timelineRevision
+                    tracking.onTimelineDiscontinuity(position)
+                }
+                tracking.resumeFromManual(player.state.value.viewport, position)
+            }
             else tracking.setManualHold(true)
         }
     }
@@ -204,6 +222,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!resumeAfterTrackingLookahead) continueAfterTargetSelection = false
     }
     fun stopDancerTracking(resumePausedVideo: Boolean = true) {
+        selectionRequest?.cancel()
+        selectionRequest = null
         val shouldResume = resumePausedVideo &&
             (continueAfterTargetSelection || resumeAfterTrackingLookahead)
         tracking.stop()
@@ -231,6 +251,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun open(video: VideoEntity, pin: PinEntity?, preferAi: Boolean, sourcePosition: Long? = null, play: Boolean = true,
                      viewportOverride: VideoViewport? = null, loopOverride: Boolean? = null) {
         cancelPlaybackTransition()
+        continueAfterTargetSelection = false
+        resumeAfterTrackingLookahead = false
         openJob = viewModelScope.launch {
             busy.value = "動画と端末の再生能力を確認しています…"
             try {
@@ -281,7 +303,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (e: Exception) {
                 message.value = e.message ?: "動画を開けません。権限と元ファイルを確認してください。"
-                runCatching { player.stopForProcessing() }.onSuccess { ai.setPlaybackActive(false) }
+                stopDancerTracking(false)
+                runCatching { releasePlaybackResources() }.onSuccess { ai.setPlaybackActive(false) }
             }
             finally { busy.value = null }
         }
@@ -301,7 +324,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val video = currentVideo.value ?: return
         val pin = currentPin.value ?: return
         val state = player.state.value
-        open(video, pin, !state.cached, state.sourcePositionUs, state.isPlaying, state.viewport, state.loop)
+        open(video, pin, !state.cached, player.liveSourcePositionUs(), state.isPlaying, state.viewport, state.loop)
     }
 
     fun closePlayer() {
@@ -310,7 +333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         fullscreen.value = false
         cancelPlaybackTransition()
         player.pause()
-        playJob = operation { savePlaybackPosition(); player.stopForProcessing(); currentVideo.value = null; currentPin.value = null; ai.setPlaybackActive(false) }
+        playJob = operation { savePlaybackPosition(); releasePlaybackResources(); currentVideo.value = null; currentPin.value = null; ai.setPlaybackActive(false) }
     }
 
     private fun cancelPlaybackTransition() { openJob?.cancel(); playJob?.cancel() }
@@ -323,6 +346,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playPause() {
         cancelPlaybackTransition()
+        // An explicit playback action supersedes the automatic post-selection resume.
+        continueAfterTargetSelection = false
+        resumeAfterTrackingLookahead = false
         if (player.exo.isPlaying) { player.pause(); return }
         playJob = operation("再生の準備をしています…") {
             ai.awaitPlaybackReady()
@@ -340,23 +366,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!visible) {
             stopDancerTracking(false)
             cancelPlaybackTransition(); player.pause()
-            playJob = operation { savePlaybackPosition(); player.stopForProcessing(); ai.setPlaybackActive(false) }
+            playJob = operation { savePlaybackPosition(); releasePlaybackResources(); ai.setPlaybackActive(false) }
         }
         else if (currentVideo.value != null && player.exo.playWhenReady) ai.setPlaybackActive(true)
     }
 
     private suspend fun savePlaybackPosition() {
         val video = currentVideo.value ?: return
+        val position = player.liveSourcePositionUs()
         val latest = repository.getVideo(video.id) ?: return
-        repository.updateVideo(latest.copy(resumePositionUs = player.state.value.sourcePositionUs, lastPlayedAt = System.currentTimeMillis()))
+        repository.updateVideo(latest.copy(resumePositionUs = position, lastPlayedAt = System.currentTimeMillis()))
     }
 
     fun savePoint() {
         val video = currentVideo.value ?: return
         val state = player.state.value
+        val sourcePosition = player.liveSourcePositionUs()
         operation {
-            repository.savePin(PinEntity(videoId = video.id, startUs = state.sourcePositionUs.coerceIn(0, video.durationUs - 1),
-                title = "${formatTimestamp(state.sourcePositionUs)} の瞬間", speedNumerator = speedFraction(state.requestedSpeed).first,
+            repository.savePin(PinEntity(videoId = video.id, startUs = sourcePosition.coerceIn(0, video.durationUs - 1),
+                title = "${formatTimestamp(sourcePosition)} の瞬間", speedNumerator = speedFraction(state.requestedSpeed).first,
                 speedDenominator = speedFraction(state.requestedSpeed).second, loop = state.loop, zoomScale = state.viewport.zoom,
                 zoomCenterX = state.viewport.centerX, zoomCenterY = state.viewport.centerY, audioMode = if (state.muted) "muted" else "original"))
             message.value = "再生を続けながらピンを保存しました。"
@@ -493,12 +521,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun enqueue(pin: PinEntity): Job {
         cancelPlaybackTransition()
+        stopDancerTracking(false)
         return operation("AI区間を準備しています…") {
         val video = repository.getVideo(pin.videoId) ?: error("元動画が見つかりません。")
         if (pin.endUs == null) error("AI補間には区間ピンを指定してください。")
         if (pin.speed !in listOf(.5f, .25f)) error("AI補間の出力速度は0.5×または0.25×です。ピンの速度を編集してください。")
         savePlaybackPosition()
-        player.stopForProcessing()
+        releasePlaybackResources()
         ai.setPlaybackActive(false)
         ai.enqueue(video, pin)
         runtime.prepareProcessing()
@@ -508,8 +537,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelJob(job: AiJobEntity) { ai.cancel(job.id) }
     fun resumeJob(job: AiJobEntity): Job {
         cancelPlaybackTransition()
+        stopDancerTracking(false)
         return operation("AI区間を再開しています…") {
-        savePlaybackPosition(); player.stopForProcessing(); ai.setPlaybackActive(false)
+        savePlaybackPosition(); releasePlaybackResources(); ai.setPlaybackActive(false)
         ai.resume(job.id); runtime.prepareProcessing()
         }.also { playJob = it }
     }
@@ -520,7 +550,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         catch (e: Exception) { message.value = e.message ?: "処理に失敗しました。もう一度お試しください。" }
         finally { if (label != null) busy.value = null }
     }
-    override fun onCleared() { tracking.stop(); player.release(); ai.setPlaybackActive(false) }
+    private suspend fun releasePlaybackResources() {
+        player.stopForProcessing()
+        // Cancellation cannot interrupt a native inference; wait for its real release.
+        withTimeout(15_000L) { tracking.awaitIdle() }
+    }
+
+    override fun onCleared() {
+        tracking.stop()
+        player.release()
+        ai.releasePlaybackWhenIdle { withTimeout(15_000L) { tracking.awaitIdle() } }
+    }
 }
 
 fun speedFraction(speed: Float): Pair<Long, Long> = when (speed) {

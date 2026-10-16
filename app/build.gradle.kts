@@ -1,3 +1,5 @@
+import com.android.build.api.artifact.SingleArtifact
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -106,4 +108,25 @@ val prepareTrackerModel by tasks.registering(Exec::class) {
 tasks.named("preBuild") { dependsOn(prepareTrackerModel) }
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
     dependsOn(prepareTrackerModel)
+}
+
+// Inspect merged manifests, because a transitive AAR can reintroduce network
+// permissions even when the application's source manifest never declares them.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val variantName = variant.name.replaceFirstChar { it.uppercaseChar() }
+        val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
+        val verifyOfflineManifest = tasks.register<Exec>("verify${variantName}OfflineManifest") {
+            inputs.file(mergedManifest)
+            doFirst {
+                commandLine("python3", rootProject.file("scripts/verify-offline-manifest.py").absolutePath,
+                    mergedManifest.get().asFile.absolutePath)
+            }
+        }
+        tasks.matching {
+            it.name == "compile${variantName}Kotlin" || it.name == "lint$variantName" ||
+                it.name == "test${variantName}UnitTest"
+        }.configureEach { dependsOn(verifyOfflineManifest) }
+        tasks.named("check") { dependsOn(verifyOfflineManifest) }
+    }
 }
