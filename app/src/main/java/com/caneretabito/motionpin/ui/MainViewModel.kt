@@ -329,7 +329,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val pin = repository.getPin(playback.order[playback.index])
         val video = pin?.let { repository.getVideo(it.videoId) }
         if (pin?.endUs == null || video == null) {
-            advanceReel()
+            stopReel()
+            message.value = "再生対象の区間ピンが見つかりません。リールを編集して再試行してください。"
             return
         }
         // Force repeat off for every clip; ExoPlayer's STATE_ENDED drives the next scene.
