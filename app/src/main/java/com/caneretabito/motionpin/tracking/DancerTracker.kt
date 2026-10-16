@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.PowerManager
 import com.caneretabito.motionpin.data.VideoEntity
 import com.caneretabito.motionpin.player.VideoViewport
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -40,6 +41,7 @@ data class DancerTrackingState(
     val manualHold: Boolean = false,
     val rotationCorrectionDegrees: Int = 0,
     val inspectedFrames: Int = 0,
+    val matchedFrames: Int = 0,
     val message: String = ""
 )
 
@@ -49,6 +51,7 @@ data class DancerTrackingState(
  */
 class DancerTracker(private val context: Context, private val scope: CoroutineScope) {
     private val _state = MutableStateFlow(DancerTrackingState())
+    private val powerManager = context.applicationContext.getSystemService(PowerManager::class.java)
     val state = _state.asStateFlow()
     private var work: Job? = null
     @Volatile private var generation = 0L
@@ -61,6 +64,16 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
     private val chunkUs = 6_000_000L
     private val aheadThresholdUs = 3_000_000L
     private val maxAnchors = 2400
+
+    private fun resourcePauseReason(): String? = when {
+        powerManager.currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE ->
+            "高温のため追尾解析を停止しました。端末が冷えたら再開します。"
+        powerManager.isPowerSaveMode ->
+            "省電力モードのため追尾解析を待機中。動画再生を優先します。"
+        playbackUnderPressure ->
+            "動画のフレーム落ちを検出したため追尾解析を待機中。"
+        else -> null
+    }
 
     fun stop() {
         generation++
@@ -153,8 +166,9 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         }
         if (sourceUs < current.analyzedUntilUs - aheadThresholdUs ||
             current.analyzedUntilUs >= video.durationUs - 1L) return
-        if (playbackIsPlaying && overloaded) {
-            _state.update { it.copy(message = "動画の滑らかさを優先して追尾解析を待機中。一時停止すると先読みできます。") }
+        val pauseReason = resourcePauseReason()
+        if (pauseReason != null) {
+            if (current.message != pauseReason) _state.update { it.copy(message = pauseReason) }
             return
         }
         analyzeAhead(video, generation)
@@ -182,6 +196,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
                 fun publish(atUs: Long, done: Boolean = false) {
                     ensureActiveToken(token)
                     val additions = anchors.toList()
+                    val matched = additions.size
                     _state.update { latest ->
                         if (latest.videoId != video.id || latest.phase == "lost") latest
                         else {
@@ -192,6 +207,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
                                 keyframes = updated,
                                 analyzedUntilUs = max(latest.analyzedUntilUs, atUs),
                                 inspectedFrames = latest.inspectedFrames + samples,
+                                matchedFrames = latest.matchedFrames + matched,
                                 message = when {
                                     !sufficient -> "追尾対象を確認中…"
                                     done -> "数秒先まで追尾準備完了"
@@ -224,7 +240,8 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
                                 return@withDetector
                             }
                             if (samples >= 2) publish(time)
-                            if (playbackUnderPressure) {
+                            val pauseReason = resourcePauseReason()
+                            if (pauseReason != null) {
                                 throttled = true
                                 publish(time)
                                 return@withDetector
@@ -238,7 +255,7 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
                     publish(if (throttled) time else min(time - step, stopAt), !throttled)
                     _state.update { it.copy(phase = "active",
                         message = when {
-                            throttled -> "4K動画の再生を優先し、追尾の先読みを一時停止しました。"
+                            throttled -> resourcePauseReason() ?: "追尾の先読みを中断しました。"
                             successes == 0 -> "人物が見えない区間です。再選択してください。"
                             else -> "先読み完了 · ${successes} 箇所の動きを追尾しました。"
                         }) }
