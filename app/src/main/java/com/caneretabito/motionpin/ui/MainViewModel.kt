@@ -85,10 +85,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             player.state.collect { playing ->
                 val current = currentVideo.value ?: return@collect
-                val updated = tracking.viewportAt(current.id, playing.sourcePositionUs, playing.viewport)
-                if (updated != null && (abs(updated.centerX - playing.viewport.centerX) > .003f ||
-                            abs(updated.centerY - playing.viewport.centerY) > .003f ||
-                            abs(updated.zoom - playing.viewport.zoom) > .003f)) player.setViewport(updated)
                 val nowMs = SystemClock.elapsedRealtime()
                 if (trackingMonitorAtMs == 0L || playing.renderedFrames < trackingFramesBaseline ||
                     playing.droppedFrames < trackingDroppedBaseline) {
@@ -114,6 +110,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     reelAdvancing = true
                     advanceReel()
                 }
+            }
+        }
+        // A separate ~30Hz camera clock avoids visibly stepping at the 150ms HUD counter rate.
+        // Video decoding remains native SurfaceView, and only its view transform changes.
+        viewModelScope.launch {
+            while (true) {
+                val video = currentVideo.value
+                val track = tracking.state.value
+                val eligible = video != null && track.videoId == video.id &&
+                    track.keyframes.isNotEmpty() && !track.manualHold &&
+                    track.phase in setOf("scanning", "active", "lost")
+                if (eligible && video != null) {
+                    val view = player.state.value.viewport
+                    val position = player.liveSourcePositionUs()
+                    val result = tracking.viewportAt(video.id, position, view)
+                    if (result != null && (abs(result.centerX - view.centerX) > .001f ||
+                            abs(result.centerY - view.centerY) > .001f ||
+                            abs(result.zoom - view.zoom) > .004f)) player.setViewport(result)
+                }
+                delay(if (eligible && player.exo.isPlaying) 33L else 110L)
             }
         }
         viewModelScope.launch {
