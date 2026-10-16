@@ -110,6 +110,8 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
         requestSelection(video, sourceUs, (_state.value.rotationCorrectionDegrees + 90) % 360)
     }
 
+    fun setUserZoom(zoom: Float) { camera.setUserZoom(zoom) }
+
     fun setFraming(framing: DancerFraming) {
         preferredFraming = framing
         _state.update { it.copy(framing = framing) }
