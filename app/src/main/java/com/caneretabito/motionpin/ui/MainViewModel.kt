@@ -120,7 +120,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             tracking.state.collect { state ->
                 if (resumeAfterTrackingLookahead &&
                     state.videoId == currentVideo.value?.id &&
-                    ((state.phase == "active" && state.keyframes.size >= 4) || state.phase == "lost")) {
+                    (state.phase == "active" || state.phase == "lost")) {
                     resumeAfterTrackingLookahead = false
                     continueAfterTargetSelection = false
                     player.exo.play()
