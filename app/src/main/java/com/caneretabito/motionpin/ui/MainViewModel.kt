@@ -9,6 +9,9 @@ import com.caneretabito.motionpin.MotionRuntime
 import com.caneretabito.motionpin.data.*
 import com.caneretabito.motionpin.player.*
 import com.caneretabito.motionpin.tracking.DancerTracker
+import com.caneretabito.motionpin.tracking.DancerFraming
+import com.caneretabito.motionpin.tracking.TrackerQuality
+import android.os.SystemClock
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +36,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val player = RetainedPlayer(application, viewModelScope)
     val tracking = DancerTracker(application, viewModelScope)
     private var continueAfterTargetSelection = false
+    private var resumeAfterTrackingLookahead = false
+    private var trackingOriginalViewport: VideoViewport? = null
+    private var trackingFramesBaseline = 0
+    private var trackingDroppedBaseline = 0
+    private var trackingMonitorAtMs = 0L
+    private var trackerOverloadedUntilMs = 0L
     val videos = repository.videos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val pins = repository.pins.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val channels = repository.channels.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -80,11 +89,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (updated != null && (abs(updated.centerX - playing.viewport.centerX) > .003f ||
                             abs(updated.centerY - playing.viewport.centerY) > .003f ||
                             abs(updated.zoom - playing.viewport.zoom) > .003f)) player.setViewport(updated)
-                tracking.maybeExtend(current, playing.sourcePositionUs)
+                val nowMs = SystemClock.elapsedRealtime()
+                if (trackingMonitorAtMs == 0L || playing.renderedFrames < trackingFramesBaseline ||
+                    playing.droppedFrames < trackingDroppedBaseline) {
+                    trackingMonitorAtMs = nowMs
+                    trackingFramesBaseline = playing.renderedFrames
+                    trackingDroppedBaseline = playing.droppedFrames
+                }
+                if (nowMs - trackingMonitorAtMs >= 3000L) {
+                    val done = playing.renderedFrames - trackingFramesBaseline
+                    val skipped = playing.droppedFrames - trackingDroppedBaseline
+                    if (done + skipped >= 50 && skipped >= 4 &&
+                        skipped.toFloat() / (done + skipped) > .025f) {
+                        trackerOverloadedUntilMs = nowMs + 10_000L
+                    }
+                    trackingFramesBaseline = playing.renderedFrames
+                    trackingDroppedBaseline = playing.droppedFrames
+                    trackingMonitorAtMs = nowMs
+                }
+                tracking.maybeExtend(current, playing.sourcePositionUs, playing.isPlaying,
+                    nowMs < trackerOverloadedUntilMs)
                 if (!playing.ended) reelAdvancing = false
                 else if (activeReel.value != null && !reelAdvancing) {
                     reelAdvancing = true
                     advanceReel()
+                }
+            }
+        }
+        viewModelScope.launch {
+            tracking.state.collect { state ->
+                if (resumeAfterTrackingLookahead &&
+                    state.videoId == currentVideo.value?.id &&
+                    ((state.phase == "active" && state.keyframes.size >= 4) || state.phase == "lost")) {
+                    resumeAfterTrackingLookahead = false
+                    continueAfterTargetSelection = false
+                    player.exo.play()
+                    if (state.phase == "lost") notify("人物を追跡できませんでした。再選択すると改善する場合があります。")
                 }
             }
         }
@@ -98,20 +138,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun requestDancerTracking() {
         val video = currentVideo.value ?: return
+        if (trackingOriginalViewport == null) trackingOriginalViewport = player.state.value.viewport
         continueAfterTargetSelection = player.exo.isPlaying
+        resumeAfterTrackingLookahead = false
         player.pause()
         tracking.requestSelection(video, player.state.value.sourcePositionUs)
     }
+
+    fun changeDancerQuality(quality: TrackerQuality) {
+        val video = currentVideo.value ?: return
+        if (tracking.state.value.phase !in setOf("choosing", "lost")) return
+        tracking.changeQuality(video, player.state.value.sourcePositionUs, quality)
+    }
+    fun rotateDancerPreview() {
+        val video = currentVideo.value ?: return
+        if (tracking.state.value.phase != "choosing") return
+        tracking.rotatePreview(video, player.state.value.sourcePositionUs)
+    }
+    fun chooseDancerFraming(framing: DancerFraming) { tracking.setFraming(framing) }
+    fun holdDancerTracking() {
+        val current = tracking.state.value
+        if (current.phase in setOf("active", "scanning"))
+            tracking.setManualHold(!current.manualHold)
+    }
+
     fun selectDancerTarget(index: Int) {
         val video = currentVideo.value ?: return
+        if (tracking.state.value.phase != "choosing") return
         tracking.select(video, index)
-        if (continueAfterTargetSelection) player.exo.play()
-        continueAfterTargetSelection = false
+        // Wait for verified lookahead: no sudden jump into a still untracked timeline.
+        resumeAfterTrackingLookahead = continueAfterTargetSelection
+        if (!resumeAfterTrackingLookahead) continueAfterTargetSelection = false
     }
-    fun stopDancerTracking() {
+    fun stopDancerTracking(resumePausedVideo: Boolean = true) {
+        val shouldResume = resumePausedVideo &&
+            (continueAfterTargetSelection || resumeAfterTrackingLookahead)
         tracking.stop()
-        if (continueAfterTargetSelection && currentVideo.value != null) player.exo.play()
+        trackingOriginalViewport?.let { player.setViewport(it) }
+        trackingOriginalViewport = null
+        resumeAfterTrackingLookahead = false
         continueAfterTargetSelection = false
+        if (shouldResume && currentVideo.value != null) player.exo.play()
     }
 
     fun openVideo(video: VideoEntity) {
@@ -135,7 +202,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             busy.value = "動画と端末の再生能力を確認しています…"
             try {
                 savePlaybackPosition()
-                if (currentVideo.value?.id != video.id) tracking.stop()
+                if (currentVideo.value?.id != video.id) {
+                    tracking.stop()
+                    trackingOriginalViewport = null
+                    resumeAfterTrackingLookahead = false
+                    continueAfterTargetSelection = false
+                }
                 player.pause()
                 if (video.needsRelink || video.uri.isBlank()) error("この動画には再関連付けが必要です。ライブラリの「再関連付け」から元動画を選択してください。")
                 val job = pin?.aiJobId?.let { repository.getJob(it) }
@@ -201,7 +273,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closePlayer() {
         stopReel()
-        tracking.stop()
+        stopDancerTracking(false)
         fullscreen.value = false
         cancelPlaybackTransition()
         player.pause()
@@ -233,6 +305,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun foreground(visible: Boolean) {
         runtime.setVisible(visible)
         if (!visible) {
+            stopDancerTracking(false)
             cancelPlaybackTransition(); player.pause()
             playJob = operation { savePlaybackPosition(); player.stopForProcessing(); ai.setPlaybackActive(false) }
         }
