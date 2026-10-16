@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.PowerManager
+import android.os.SystemClock
 import com.caneretabito.motionpin.data.AiJobEntity
 import com.caneretabito.motionpin.data.JobStatus
 import com.caneretabito.motionpin.data.MotionRepository
@@ -46,6 +47,8 @@ class AiCoordinator(context: Context, private val repository: MotionRepository) 
     private val _schedulerError = MutableStateFlow<String?>(null)
     val schedulerError: StateFlow<String?> = _schedulerError.asStateFlow()
     val jobs = repository.jobs
+    private val _generationEta = MutableStateFlow<AiGenerationEta?>(null)
+    val generationEta: StateFlow<AiGenerationEta?> = _generationEta.asStateFlow()
     @Volatile private var foreground = false
     @Volatile private var playbackActive = false
     @Volatile private var closed = false
@@ -257,6 +260,8 @@ class AiCoordinator(context: Context, private val repository: MotionRepository) 
             outputPath = null, cacheKey = null, colorContract = "", encoderConfig = "", precision = "fp32", audioMode = "muted",
             error = "Preparing original-resolution SDR pipeline; audio is muted", capability = "UNVERIFIED")
         var unpublishedOutput: String? = null
+        val etaEstimator = FrameEtaEstimator()
+        _generationEta.value = null
         try {
             repository.updateJob(current)
             boundary(current.id)
@@ -271,6 +276,8 @@ class AiCoordinator(context: Context, private val repository: MotionRepository) 
                     error = "Generating real RIFE frames at original resolution. Audio is muted; visual/device quality remains unverified.")
                 repository.updateJob(current)
             }, progress = { progress ->
+                _generationEta.value = AiGenerationEta(current.id, progress.frames, progress.total,
+                    etaEstimator.observe(progress.frames, progress.total, SystemClock.elapsedRealtime()))
                 current = current.copy(progress = progress.frames.toFloat() / progress.total * .95f,
                     inferenceCount = progress.inferences, outputFrameCount = progress.frames)
                 repository.updateJob(current)
@@ -300,6 +307,7 @@ class AiCoordinator(context: Context, private val repository: MotionRepository) 
                 capability = if (error is QualityGateException) "UNSUPPORTED" else "UNVERIFIED",
                 error = "${error.javaClass.simpleName}: ${error.message ?: "Native/codec execution failed"}. No reduced-quality fallback was used."))
         } finally {
+            _generationEta.value = null
             unpublishedOutput?.let { path -> File(path).delete(); File(path.removeSuffix(".mp4") + ".json").delete() }
         }
     }
