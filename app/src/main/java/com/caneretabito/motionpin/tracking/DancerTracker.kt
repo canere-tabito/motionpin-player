@@ -322,8 +322,8 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
                 .setModelAssetPath(quality.modelFile).build())
             .setRunningMode(RunningMode.IMAGE)
             .setCategoryAllowlist(listOf("person"))
-            .setMaxResults(12)
-            .setScoreThreshold(.30f)
+            .setMaxResults(24)
+            .setScoreThreshold(if (quality == TrackerQuality.HIGH) .22f else .30f)
             .build()
         return ObjectDetector.createFromOptions(context, options).use(block)
     }
