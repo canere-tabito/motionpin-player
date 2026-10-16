@@ -30,6 +30,8 @@ data class PlaybackState(
     val requestedSpeed: Float = 1f,
     val muted: Boolean = false,
     val loop: Boolean = false,
+    val ended: Boolean = false,
+    val replay: Boolean = false,
     val viewport: VideoViewport = VideoViewport(),
     val fill: Boolean = false,
     val aspect: Float = 16f / 9f,
@@ -51,12 +53,18 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
     private var uri: Uri? = null
     private var sourceFullDurationUs = 1L
     private var temporarySpeed = false
+    private data class ReplayRestore(val uri: Uri, val timeline: PlaybackTimeline,
+        val positionUs: Long, val durationUs: Long, val speed: Float, val loop: Boolean,
+        val viewport: VideoViewport, val muted: Boolean, val aspect: Float)
+    private var replayRestore: ReplayRestore? = null
     private val decoderActive = MutableStateFlow(false)
 
     init {
         exo.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { update { copy(isPlaying = isPlaying) } }
-            override fun onPlaybackStateChanged(playbackState: Int) { update { copy(buffering = playbackState == Player.STATE_BUFFERING) } }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                update { copy(buffering = playbackState == Player.STATE_BUFFERING, ended = playbackState == Player.STATE_ENDED) }
+            }
             override fun onPlayerError(error: PlaybackException) { update { copy(error = "${error.errorCodeName}: ${error.message ?: "再生できません"}", buffering = false) } }
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (videoSize.height > 0) update { copy(aspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height) }
@@ -87,7 +95,9 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
     private fun update(block: PlaybackState.() -> PlaybackState) { mutable.value = block(mutable.value) }
 
     fun open(uri: Uri, fullDurationUs: Long, timeline: PlaybackTimeline, positionUs: Long, speed: Float,
-             loop: Boolean, viewport: VideoViewport, muted: Boolean, aspect: Float, play: Boolean = true) {
+             loop: Boolean, viewport: VideoViewport, muted: Boolean, aspect: Float, play: Boolean = true,
+             clipMediaStartUs: Long? = null, clipMediaEndUs: Long? = null) {
+        replayRestore = null
         this.uri = uri
         this.timeline = timeline
         sourceFullDurationUs = fullDurationUs
@@ -95,8 +105,13 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         val item = MediaItem.fromUri(uri)
         val source = sourceFactory.createMediaSource(item)
         // Loop boundaries belong to the media source; the UI ticker never implements looping.
-        val playable = if (!timeline.cached && (timeline.sourceStartUs > 0 || timeline.sourceEndUs < fullDurationUs))
-            ClippingMediaSource(source, timeline.sourceStartUs, timeline.sourceEndUs) else source
+        val playable = when {
+            clipMediaStartUs != null && clipMediaEndUs != null ->
+                ClippingMediaSource(source, clipMediaStartUs, clipMediaEndUs)
+            !timeline.cached && (timeline.sourceStartUs > 0 || timeline.sourceEndUs < fullDurationUs) ->
+                ClippingMediaSource(source, timeline.sourceStartUs, timeline.sourceEndUs)
+            else -> source
+        }
         exo.setMediaSource(playable, timeline.toPlayerUs(positionUs) / 1_000)
         exo.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         exo.playbackParameters = PlaybackParameters(timeline.effectivePlayerSpeed(speed), 1f)
@@ -106,6 +121,32 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
             viewport = viewport.bounded(), fill = mutable.value.fill, aspect = aspect)
         exo.prepare()
         exo.playWhenReady = play
+    }
+
+    /** The immediately preceding source-time window, looped without AI generation or source export. */
+    fun toggleInstantReplay(durationUs: Long = 3_000_000L): Boolean {
+        replayRestore?.let { old ->
+            replayRestore = null
+            open(old.uri, old.durationUs, old.timeline, old.positionUs, old.speed, old.loop,
+                old.viewport, old.muted, old.aspect, play = true)
+            return false
+        }
+        val source = uri ?: return false
+        val activeTimeline = timeline ?: return false
+        val old = mutable.value
+        val end = old.sourcePositionUs.coerceIn(activeTimeline.sourceStartUs + 1L, activeTimeline.sourceEndUs)
+        val start = maxOf(activeTimeline.sourceStartUs, end - durationUs.coerceAtLeast(500_000L))
+        if (end - start < 250_000L) return false
+        val restore = ReplayRestore(source, activeTimeline, old.sourcePositionUs, sourceFullDurationUs,
+            old.requestedSpeed, old.loop, old.viewport, old.muted, old.aspect)
+        val loopTimeline = PlaybackTimeline(start, end, activeTimeline.bakedSpeed, activeTimeline.cached)
+        val mediaStart = if (activeTimeline.cached) activeTimeline.toPlayerUs(start) else null
+        val mediaEnd = if (activeTimeline.cached) activeTimeline.toPlayerUs(end) + 1L else null
+        open(source, sourceFullDurationUs, loopTimeline, start, old.requestedSpeed, true, old.viewport,
+            old.muted, old.aspect, play = true, clipMediaStartUs = mediaStart, clipMediaEndUs = mediaEnd)
+        replayRestore = restore
+        update { copy(replay = true) }
+        return true
     }
 
     fun playPause() { if (exo.isPlaying) exo.pause() else exo.play() }
