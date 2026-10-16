@@ -69,7 +69,7 @@ class TrackingQualityTest {
         val start = camera.follow(0, person(.2f), VideoViewport(),
             DancerFraming.FULL)
         assertEquals(.29f, start.centerX, .0001f)
-        assertTrue(start.zoom >= 1.65f)
+        assertTrue(start.zoom in 1f..1.65f) // full-body visibility takes priority over minimum zoom
         val easing = camera.follow(200_000, person(.55f), start, DancerFraming.FULL)
         assertTrue(easing.centerX > start.centerX)
         assertTrue(easing.centerX < .64f)
