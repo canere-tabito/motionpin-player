@@ -41,6 +41,7 @@ interface MotionDao {
     @Upsert suspend fun putJob(value: AiJobEntity)
     @Upsert suspend fun putSetting(value: SettingEntity)
     @Query("DELETE FROM pins WHERE id = :id") suspend fun deletePin(id: String)
+    @Query("DELETE FROM settings WHERE `key` = :key") suspend fun deleteSetting(key: String)
     @Query("DELETE FROM channels WHERE id = :id") suspend fun deleteChannel(id: String)
     @Query("DELETE FROM channel_videos WHERE channelId = :channelId AND videoId = :videoId") suspend fun removeFromChannel(channelId: String, videoId: String)
 }
