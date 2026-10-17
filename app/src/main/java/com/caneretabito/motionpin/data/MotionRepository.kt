@@ -83,7 +83,10 @@ class MotionRepository(context: Context) {
         if (video.fingerprintSha256 == null && video.availability == Availability.AVAILABLE && !video.needsRelink)
             ensureFingerprint(video.id)
     }
-    suspend fun deletePin(id: String) = dao.deletePin(id)
+    suspend fun deletePin(id: String) = database.withTransaction {
+        dao.deletePin(id)
+        dao.deleteSetting(com.caneretabito.motionpin.player.ColorGradeSettings.pinKey(id))
+    }
     suspend fun addChannel(name: String): ChannelEntity {
         require(name.isNotBlank() && name.length <= 200)
         return ChannelEntity(name = name.trim()).also { dao.putChannel(it) }
