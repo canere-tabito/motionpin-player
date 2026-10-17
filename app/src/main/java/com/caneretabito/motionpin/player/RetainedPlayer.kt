@@ -61,8 +61,7 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
     private var comparingOriginal = false
     private data class ReplayRestore(val uri: Uri, val timeline: PlaybackTimeline,
         val positionUs: Long, val durationUs: Long, val speed: Float, val loop: Boolean,
-        val viewport: VideoViewport, val muted: Boolean, val aspect: Float,
-        val grade: ColorGrade, val gradePermitted: Boolean)
+        val viewport: VideoViewport, val muted: Boolean, val aspect: Float)
     private var replayRestore: ReplayRestore? = null
     private val decoderActive = MutableStateFlow(false)
     private var timelineRevision = 0L
@@ -157,7 +156,7 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
             replayRestore = null
             open(old.uri, old.durationUs, old.timeline, old.positionUs, old.speed, old.loop,
                 old.viewport, old.muted, old.aspect, play = true,
-                colorGrade = old.grade, gradePermitted = old.gradePermitted)
+                colorGrade = colorGrade, gradePermitted = gradingPermitted)
             return false
         }
         val source = uri ?: return false
@@ -168,8 +167,7 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         val start = maxOf(activeTimeline.sourceStartUs, end - durationUs.coerceAtLeast(500_000L))
         if (end - start < 250_000L) return false
         val restore = ReplayRestore(source, activeTimeline, livePositionUs, sourceFullDurationUs,
-            old.requestedSpeed, old.loop, old.viewport, old.muted, old.aspect,
-            colorGrade, gradingPermitted)
+            old.requestedSpeed, old.loop, old.viewport, old.muted, old.aspect)
         val loopTimeline = PlaybackTimeline(start, end, activeTimeline.bakedSpeed, activeTimeline.cached)
         val mediaStart = if (activeTimeline.cached) activeTimeline.toPlayerUs(start) else null
         val mediaEnd = if (activeTimeline.cached) activeTimeline.toPlayerUs(end) + 1L else null
@@ -229,7 +227,7 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         return true
     }
 
-    /** Exact neutral (no-effect) display path for accessible before/after comparison. */
+    /** No-adjustment comparison; this is not a bit-exact pixel identity claim. */
     fun compareOriginal(active: Boolean) {
         if (!gradingPermitted || active == comparingOriginal) return
         comparingOriginal = active
