@@ -27,6 +27,15 @@ data class PlaybackInspection(
 ) {
     val aspect: Float get() = if (width <= 0 || height <= 0) 16f / 9f else if (rotation % 180 != 0) height.toFloat() / width else width.toFloat() / height
     val is4K: Boolean get() = maxOf(width, height) >= 3840
+
+    /** No color grading for unknown transfer, HDR or a depth/profile not proved to be SDR 8-bit. */
+    val colorGradeBlockedReason: String?
+        get() = when {
+            blockedReason != null -> "再生能力を確認できないため映像調整を停止します。"
+            color != "SDR" -> "HDRまたは色特性が未確認の動画です。元の色・ビット深度を守るため映像調整を無効にしています。"
+            bitDepth != 8 -> "8bit SDRと確認できない動画です。画質を勝手に変えないため映像調整を無効にしています。"
+            else -> null
+        }
 }
 
 object PlaybackDiagnostics {
@@ -68,8 +77,25 @@ object PlaybackDiagnostics {
                 else -> null
             }
             val depth = when {
-                hdrPq || hdrHlg || profile in setOf(MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus) -> 10
-                else -> null
+                dolby || hdrPq || hdrHlg || profile in setOf(
+                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
+                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10,
+                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileHigh10,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileHigh422,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileHigh444
+                ) -> 10
+                mime == MediaFormat.MIMETYPE_VIDEO_AVC && profile in setOf(
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileConstrainedBaseline,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileMain,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileExtended,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileHigh,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileConstrainedHigh
+                ) -> 8
+                mime == MediaFormat.MIMETYPE_VIDEO_HEVC &&
+                    profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain -> 8
+                else -> null // Unknown is not automatically SDR/8-bit.
             }
             val color = when {
                 dolby -> "Dolby Vision（実表示は要検証）"
