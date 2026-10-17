@@ -49,6 +49,9 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     val fullscreen by model.fullscreen.collectAsStateWithLifecycle()
     val tracking by model.tracking.state.collectAsStateWithLifecycle()
     val selectedPin by model.currentPin.collectAsStateWithLifecycle()
+    val grade by model.colorGrade.collectAsStateWithLifecycle()
+    val gradeBlocked by model.colorGradeBlockedReason.collectAsStateWithLifecycle()
+    val gradeComparing by model.colorGradeCompare.collectAsStateWithLifecycle()
     val inspection by model.inspection.collectAsStateWithLifecycle()
     val jobs by model.jobs.collectAsStateWithLifecycle()
     // FULL framing needs the complete source even in a portrait screen. Preserve the user's
@@ -58,6 +61,7 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     val effectiveFill = state.fill && !fullBodyFit
     var hud by rememberSaveable(video.id) { mutableStateOf(true) }
     var tools by rememberSaveable { mutableStateOf(false) }
+    var gradeSheet by rememberSaveable(video.id) { mutableStateOf(false) }
     var diagnostics by rememberSaveable { mutableStateOf(false) }
     var pinSheet by rememberSaveable { mutableStateOf(false) }
     var reelPin by remember { mutableStateOf<PinEntity?>(null) }
@@ -68,13 +72,13 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
         val landscape = maxWidth > maxHeight
         val verticalVideo = state.aspect < 1f
         val immersive = fullscreen || landscape || verticalVideo
-        LaunchedEffect(hud, state.isPlaying, interaction, immersive, tools, diagnostics, pinSheet, tracking.phase) {
+        LaunchedEffect(hud, state.isPlaying, interaction, immersive, tools, diagnostics, pinSheet, gradeSheet, tracking.phase) {
             if (immersive && hud && state.isPlaying && tracking.phase != "lost" &&
-                !tools && !diagnostics && !pinSheet) { delay(4_000); hud = false }
+                !tools && !diagnostics && !pinSheet && !gradeSheet) { delay(4_000); hud = false }
         }
         if (!immersive) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen,
+                PlayerHeader(video, model::closePlayer, { diagnostics = true }, { gradeSheet = true }, fullscreen, model::toggleFullscreen,
                     tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id,
                     { if (tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id) model.stopDancerTracking() else model.requestDancerTracking() })
                 VideoSurface(model, state, effectiveFill, Modifier.fillMaxWidth().aspectRatio(state.aspect.coerceAtLeast(.3f)), { hud = !hud }, interact)
@@ -137,7 +141,19 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     if (tracking.videoId == video.id && tracking.phase == "choosing")
         DancerSelectionDialog(tracking, model::selectDancerTarget, { model.stopDancerTracking() },
             model::changeDancerQuality, model::rotateDancerPreview, model::stepDancerPreview)
-    if (tools) PlayerTools(model, state, { tools = false; interact() }, { diagnostics = true })
+    if (tools) PlayerTools(model, state, { tools = false; interact() }, { diagnostics = true },
+        { tools = false; gradeSheet = true; interact() })
+    if (gradeSheet) ModalBottomSheet(
+        onDismissRequest = { gradeSheet = false; model.compareColorOriginal(false); interact() },
+        containerColor = Obsidian, scrimColor = Color.Transparent
+    ) {
+        ColorGradingPanel(
+            grade = grade, blockedReason = gradeBlocked, comparing = gradeComparing,
+            isPin = selectedPin != null, onChange = model::setColorGrade,
+            onCompare = model::compareColorOriginal,
+            onSaveVideoDefault = model::saveColorGradeAsVideoDefault
+        )
+    }
     if (diagnostics) DiagnosticsDialog(inspection, state) { diagnostics = false }
     reelPin?.let { pin -> ReelPickerDialog(model, pin) { reelPin = null } }
     if (pinSheet) ModalBottomSheet(onDismissRequest = { pinSheet = false }, containerColor = Obsidian) {
@@ -189,7 +205,7 @@ private fun TrackingControls(model: MainViewModel, tracking: DancerTrackingState
 
 @Composable
 private fun PlayerHeader(video: VideoEntity, onBack: () -> Unit, onDiagnostics: () -> Unit,
-                         fullscreen: Boolean, onFullscreen: () -> Unit, trackingActive: Boolean,
+                         onColorGrade: () -> Unit, fullscreen: Boolean, onFullscreen: () -> Unit, trackingActive: Boolean,
                          onTracking: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack, Modifier.size(48.dp)) { Icon(Icons.Default.ArrowBack, "ライブラリに戻る") }
@@ -205,6 +221,9 @@ private fun PlayerHeader(video: VideoEntity, onBack: () -> Unit, onDiagnostics: 
         IconButton(onClick = onFullscreen, Modifier.size(48.dp)) {
             Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                 if (fullscreen) "全画面固定を解除" else "全画面固定", tint = if (fullscreen) Champagne else Ivory)
+        }
+        IconButton(onClick = onColorGrade, Modifier.size(48.dp)) {
+            Icon(Icons.Default.Palette, "映像の明るさと色合いを調整", tint = Champagne)
         }
         IconButton(onClick = onDiagnostics, Modifier.size(48.dp)) { Icon(Icons.Default.Info, "再生能力とdecoderの診断") }
     }
@@ -325,7 +344,8 @@ private fun PlaybackControls(model: MainViewModel, state: PlaybackState, pin: Pi
 }
 
 @Composable
-private fun PlayerTools(model: MainViewModel, state: PlaybackState, onDismiss: () -> Unit, onDiagnostics: () -> Unit) {
+private fun PlayerTools(model: MainViewModel, state: PlaybackState, onDismiss: () -> Unit,
+                        onDiagnostics: () -> Unit, onColorGrade: () -> Unit) {
     var fillConfirm by remember { mutableStateOf(false) }
     fun manualViewport(viewport: VideoViewport) {
         val tracking = model.tracking.state.value
@@ -361,6 +381,7 @@ private fun PlayerTools(model: MainViewModel, state: PlaybackState, onDismiss: (
                 IconButton(onClick = { manualViewport(state.viewport.copy(centerX = state.viewport.centerX + .05f)) }, Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowRight, "表示位置を右へ") }
             }
             TextButton(onClick = { manualViewport(VideoViewport()) }) { Text("ズームと位置をリセット") }
+            TextButton(onClick = onColorGrade) { Icon(Icons.Default.Palette, null); Text("映像の色調整") }
             TextButton(onClick = onDiagnostics) { Text("decoder・HDR・フレーム診断") }
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } })
