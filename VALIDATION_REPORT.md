@@ -1,5 +1,24 @@
 # Validation report
 
+## 修正ブランチ：動画内の元カバー画像優先（2026-10-17）
+
+対象：`fix/embedded-cover-thumbnails-20261017`（既存`feat/motionpin-player`に対する未マージの修正）。
+現行配布APKには含まれません。versionCode/versionNameも変更していません。
+
+- 実装：オリジナルのMatroska Attachments（cover/poster等のjpg/png/webp）をローカル読み取り専用のseekable FDから、要素数・画像サイズ・バイト数に上限を設けて探す。Androidが読める他形式の埋め込みアートにも対応。見つからなければ従来のContentResolverサムネイルと動画フレームへのfallbackを維持。埋め込みカバーが存在する場合は黒い表紙でも勝手に別場面へ置換しない。
+- ユーザー確認（2026-10-17）：問題のEmotion!!!動画は**MKV**。Veltaの`core/src/main/kotlin/io/github/canere_tabito/velta/core/archival/ArchivePlanner.kt`は、取得した元のJPEG/PNG/WebPサムネイルをMKVの`cover.<ext>`にFFmpeg `-attach`する。Veltaの`RetainedMediaArtwork.kt`は元のMKV coverと旧式サイドカーを優先。MotionPin旧実装はOSサムネイルと動画フレームのみだった。実ファイルがMKV内部カバーか旧式`*.thumbnail.jpg`の別ファイルかは**未確認**。別ファイル画像の読み取りはこの修正の対象外。追加ストレージ権限なし。
+- テスト追加：実カバー優先、失敗時の従来fallback、キャンセル、合成EBMLのcover優先・不正添付拒否、キャッシュ識別。テストソースを追加したが未実行のため成功を宣言しない。
+
+| 検査 | 結果 | 理由 |
+|---|---|---|
+| Android/Kotlin compile、JVM unit | NOT_RUN | 本作業環境にプロジェクトのAndroid SDK/Gradle依存およびGitHubソースcheckoutがなく、テスト実行環境なし |
+| 実機：問題のVelta動画のオリジナルカバー | NOT_RUN | 実ファイル、Android端末なし。MKV添付またはサイドカーか要確認 |
+| 元動画・メタデータ・権限への影響 | NOT_RUN（実機） | 読取り専用APIのみ。変更禁止をコードレビューで確認。APK未生成 |
+
+次の正式APK前にCodex環境で`./gradlew testDebugUnitTest compileDebugKotlin`を実行し、Veltaの実ファイルを使ってサムネが一致するか確認する。サイドカー型なら一度だけフォルダ権限を付与するUIなど別経路を設計し、READ_MEDIA_IMAGESを無断追加しない。
+
+---
+
 ## 現行：サムネイル・人物検出開始失敗の修正（2026-10-17）
 
 対象：`feat/motionpin-player`、`0.2.0-alpha2` / versionCode 3。

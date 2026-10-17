@@ -19,6 +19,9 @@ data class ThumbnailRequest(
     val rotationDegrees: Int = 0,
     val maxWidth: Int = 320,
     val maxHeight: Int = 180,
+    /** Used only to identify candidate embedded covers, not as a filesystem path. */
+    val fileName: String = "",
+    val mimeType: String = "",
 )
 
 data class ThumbnailSize(val width: Int, val height: Int)
@@ -70,6 +73,8 @@ object ThumbnailPolicy {
 
 /** Provider and decoder ownership are explicit so failure/cancellation policy is JVM-testable. */
 interface ThumbnailBackend<T : Any> {
+    /** Original artwork has precedence over scene-derived thumbnails, even if mostly dark. */
+    suspend fun embedded(): T? = null
     suspend fun provider(): T?
     suspend fun frame(timeUs: Long): T?
     fun score(image: T): Float
@@ -104,6 +109,18 @@ suspend fun <T : Any> chooseThumbnail(request: ThumbnailRequest, backend: Thumbn
         }
     }
     try {
+        // A publisher-supplied cover is the intended identity of the video.
+        // Never replace it with a more detailed but unrelated performance frame.
+        val cover = read { backend.embedded() }
+        if (cover != null) {
+            try {
+                currentCoroutineContext().ensureActive()
+                return cover
+            } catch (cancelled: CancellationException) {
+                backend.discard(cover)
+                throw cancelled
+            }
+        }
         if (!consider(read { backend.provider() })) {
             for (timeUs in ThumbnailPolicy.frameTimesUs(request.durationUs)) {
                 if (consider(read { backend.frame(timeUs) })) break

@@ -366,7 +366,8 @@ private fun EmptyState(title: String, text: String) { Column(Modifier.fillMaxWid
 fun VideoThumbnail(video: VideoEntity, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val request = ThumbnailRequest(video.id, video.uri, video.revision, video.modifiedSeconds,
-        video.sizeBytes, video.durationUs, video.width, video.height, video.rotationDegrees)
+        video.sizeBytes, video.durationUs, video.width, video.height, video.rotationDegrees,
+        fileName = video.displayName, mimeType = video.mimeType)
     // Reset the remembered image immediately on relink/permission/source changes. produceState's
     // keys alone restart its coroutine but retain the previous image until that coroutine runs.
     val bitmap by key(request, video.availability, video.needsRelink) {

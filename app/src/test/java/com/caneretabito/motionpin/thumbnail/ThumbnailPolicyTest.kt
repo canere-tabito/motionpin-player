@@ -13,6 +13,7 @@ class ThumbnailPolicyTest {
         val changed = listOf(original.copy(uri = "content://media/external/video/media/8"),
             original.copy(revision = 4L), original.copy(modifiedSeconds = 101L),
             original.copy(sizeBytes = 2001L), original.copy(rotationDegrees = 90),
+            original.copy(fileName = "changed.mkv"), original.copy(mimeType = "video/x-matroska"),
             original.copy(maxWidth = 160, maxHeight = 90))
         changed.forEach { assertNull("Changed source/layout must miss cache: $it", cached[it]) }
     }

@@ -3,10 +3,12 @@ package com.caneretabito.motionpin.thumbnail
 import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.system.Os
 import android.system.OsConstants
@@ -74,6 +76,7 @@ object LocalVideoThumbnails {
 /** Native calls remain inside the worker permit until they return; release never races decode. */
 internal class AndroidThumbnailBackend(context: Context, private val request: ThumbnailRequest) :
     ThumbnailBackend<Bitmap>, Closeable {
+    private companion object { const val MAX_COVER_BYTES = 8 * 1024 * 1024 }
     private val resolver = context.applicationContext.contentResolver
     private val uri = Uri.parse(request.uri)
     private val bounds = ThumbnailPolicy.scaledSize(0, 0, request.maxWidth, request.maxHeight)
@@ -83,6 +86,56 @@ internal class AndroidThumbnailBackend(context: Context, private val request: Th
     private var sourceHeight = request.height
     private var rotation = request.rotationDegrees
     private val startedAtMs = SystemClock.elapsedRealtime()
+
+    /** Use the original archive cover, never a frame chosen from the performance. */
+    override suspend fun embedded(): Bitmap? {
+        if (SystemClock.elapsedRealtime() - startedAtMs > 5_000L) return null
+        currentCoroutineContext().ensureActive()
+        val isMatroska = request.fileName.endsWith(".mkv", ignoreCase = true) ||
+            request.mimeType.contains("matroska", ignoreCase = true)
+        val original = if (isMatroska) {
+            val descriptor = cancellableResource<ParcelFileDescriptor>({ it.close() }) { signal ->
+                resolver.openFileDescriptor(uri, "r", signal)
+            }
+            descriptor?.let { fd ->
+                ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
+                    MatroskaCoverReader.originalCover(input.channel)
+                }
+            }
+        } else null
+        // Android's retriever handles MP4 embedded artwork, but may ignore MKV attachments.
+        val bytes = original?.takeIf { it.size in 1..MAX_COVER_BYTES }
+            ?: getRetriever()?.embeddedPicture?.takeIf { it.size in 1..MAX_COVER_BYTES }
+            ?: return null
+        val bitmap = decodeEmbeddedCover(bytes) ?: return null
+        try {
+            currentCoroutineContext().ensureActive()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            bitmap.recycle()
+            throw cancelled
+        }
+        return bitmap
+    }
+
+    private fun decodeEmbeddedCover(bytes: ByteArray): Bitmap? {
+        val metadata = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, metadata)
+        val width = metadata.outWidth
+        val height = metadata.outHeight
+        if (width !in 1..32768 || height !in 1..32768 ||
+            width.toLong() * height > 16_777_216L) return null
+        var sample = 1
+        while (width / sample > bounds.width || height / sample > bounds.height) {
+            if (sample >= 1024) return null
+            sample *= 2
+        }
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+            BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }) ?: return null
+        return normalize(decoded, correctRetrieverRotation = false)
+    }
 
     override suspend fun provider(): Bitmap? {
         if (uri.scheme != "content") return null
