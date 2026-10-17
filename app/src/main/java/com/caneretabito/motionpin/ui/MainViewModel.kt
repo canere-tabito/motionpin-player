@@ -305,8 +305,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val savedGrade = if (previouslyLoaded) colorGrade.value else {
                     val pinned = pin?.let { repository.getSetting(ColorGradeSettings.pinKey(it.id)) }
                     val defaultGrade = repository.getSetting(ColorGradeSettings.videoKey(freshVideo.id))
-                    ColorGradeSettings.decode(pinned) ?: ColorGradeSettings.decode(defaultGrade)
-                        ?: ColorGrade.ORIGINAL
+                    ColorGradeSettings.resolve(defaultGrade, pinned)
                 }
                 val gradeBlock = details.colorGradeBlockedReason
                 currentCoroutineContext().ensureActive()
