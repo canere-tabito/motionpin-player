@@ -100,7 +100,7 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
             VideoSurface(model, state, effectiveFill, Modifier.fillMaxSize(), { hud = !hud }, interact)
             if (hud) {
                 Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .8f), Color.Transparent))).statusBarsPadding()) {
-                    PlayerHeader(video, model::closePlayer, { diagnostics = true }, fullscreen, model::toggleFullscreen,
+                    PlayerHeader(video, model::closePlayer, { diagnostics = true }, { gradeSheet = true }, fullscreen, model::toggleFullscreen,
                     tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id,
                     { if (tracking.phase in setOf("scanning", "active") && tracking.videoId == video.id) model.stopDancerTracking() else model.requestDancerTracking() })
                 }
