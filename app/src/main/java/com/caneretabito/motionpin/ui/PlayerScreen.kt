@@ -149,7 +149,10 @@ fun PlayerScreen(model: MainViewModel, video: VideoEntity, pins: List<PinEntity>
     ) {
         ColorGradingPanel(
             grade = grade, blockedReason = gradeBlocked, comparing = gradeComparing,
-            isPin = selectedPin != null, onChange = model::setColorGrade,
+            isPin = selectedPin != null, onChange = { changed ->
+                if (gradeComparing) model.compareColorOriginal(false)
+                model.setColorGrade(changed)
+            },
             onCompare = model::compareColorOriginal,
             onSaveVideoDefault = model::saveColorGradeAsVideoDefault
         )
