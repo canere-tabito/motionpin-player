@@ -1,0 +1,49 @@
+{
+  "provenance": "Original ffmpeg lavfi black lead and testsrc2 artwork. No external footage.",
+  "purpose": "Android thumbnail fallback/container regression; not playback/HDR quality evidence.",
+  "generator": "generate.sh",
+  "ffmpeg_version": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "assets": [
+    {
+      "file": "black-lead.mp4",
+      "bytes": 56331,
+      "sha256": "ad974ae10f9a16804c1ba0ebc9a98bdabc4a7665afad5ea5fc6a110ec9ff7910",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 320,
+            "height": 180,
+            "avg_frame_rate": "12/1",
+            "nb_frames": "48"
+          }
+        ],
+        "format": {
+          "duration": "4.000000"
+        }
+      }
+    },
+    {
+      "file": "black-lead.mkv",
+      "bytes": 56367,
+      "sha256": "5a1d6c5276ea29b9984940d4db24302d407c00861dfe8d9c67aa715c95a77cd4",
+      "ffprobe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "width": 320,
+            "height": 180,
+            "avg_frame_rate": "12/1"
+          }
+        ],
+        "format": {
+          "duration": "4.000000"
+        }
+      }
+    }
+  ]
+}

@@ -453,7 +453,14 @@ class DancerTracker(private val context: Context, private val scope: CoroutineSc
     }
 
     private suspend fun <T> withDetector(quality: TrackerQuality, block: suspend (ObjectDetector) -> T): T {
-        return ObjectDetector.createFromOptions(context, detectorOptions(quality)).use { block(it) }
+        val detector = try {
+            ObjectDetector.createFromOptions(context, detectorOptions(quality))
+        } catch (error: LinkageError) {
+            // Missing/incompatible native libraries or generated classes must use the same
+            // visible failure and bitmap-cleanup path as other detector startup errors.
+            throw IllegalStateException("追尾AIエンジンを読み込めません。アプリの更新・再起動後にお試しください。", error)
+        }
+        return detector.use { block(it) }
     }
 
     private fun detect(detector: ObjectDetector, bitmap: Bitmap): List<PersonBox> {

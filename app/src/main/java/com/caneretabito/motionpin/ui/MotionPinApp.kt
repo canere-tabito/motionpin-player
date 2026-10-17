@@ -2,7 +2,6 @@ package com.caneretabito.motionpin.ui
 
 import android.graphics.Bitmap
 import android.net.Uri
-import android.util.Size
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -28,10 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.caneretabito.motionpin.data.*
 import com.caneretabito.motionpin.player.formatTimestamp
+import com.caneretabito.motionpin.thumbnail.LocalVideoThumbnails
+import com.caneretabito.motionpin.thumbnail.ThumbnailRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -363,17 +362,17 @@ private fun EmptyState(title: String, text: String) { Column(Modifier.fillMaxWid
     Icon(Icons.Default.PushPin, null, tint = Champagne, modifier = Modifier.size(38.dp)); Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 18.dp, bottom = 10.dp)); Text(text, color = Muted)
 } }
 
-private val thumbnailPermits = Semaphore(2)
-private val thumbnailCache = android.util.LruCache<String, Bitmap>(32)
-
 @Composable
 fun VideoThumbnail(video: VideoEntity, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val bitmap by produceState<Bitmap?>(initialValue = null, video.uri, video.revision, video.availability) {
-        if (video.availability != Availability.AVAILABLE || video.needsRelink) return@produceState
-        val key = "${video.id}:${video.revision}:${video.modifiedSeconds}"
-        value = thumbnailCache.get(key) ?: withContext(Dispatchers.IO) {
-            thumbnailPermits.withPermit { runCatching { context.contentResolver.loadThumbnail(Uri.parse(video.uri), Size(320, 180), null) }.getOrNull()?.also { thumbnailCache.put(key, it) } }
+    val request = ThumbnailRequest(video.id, video.uri, video.revision, video.modifiedSeconds,
+        video.sizeBytes, video.durationUs, video.width, video.height, video.rotationDegrees)
+    // Reset the remembered image immediately on relink/permission/source changes. produceState's
+    // keys alone restart its coroutine but retain the previous image until that coroutine runs.
+    val bitmap by key(request, video.availability, video.needsRelink) {
+        produceState<Bitmap?>(initialValue = null) {
+            if (video.availability == Availability.AVAILABLE && !video.needsRelink)
+                value = LocalVideoThumbnails.load(context, request)
         }
     }
     Box(modifier.background(Obsidian, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {

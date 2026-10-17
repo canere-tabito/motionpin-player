@@ -1,16 +1,17 @@
 # MotionPin — tracking pre-APK gate and build handoff
 
-Updated: 2026-10-16. Development version: `0.2.0-alpha1` (code 2).
+Updated: 2026-10-17. Development version: `0.2.0-alpha2` (code 3).
 Baseline: `cfc819794f9b811268398b617b63465b3caf9e29`.
 The latest executed outcomes are in [VALIDATION_REPORT.md](../VALIDATION_REPORT.md).
 This document is a gate/procedure, not a physical-device acceptance certificate.
 
 ## Current authorization boundary
 
-No GitHub Actions, workflow creation/dispatch/rerun, APK assemble/package, signing,
-key generation/replacement, debug-key fallback, tag or Release publication in this
-work. Future artifact creation requires the next explicit instruction. App ID,
-data schema, source files and the canonical signing identity remain unchanged.
+The user subsequently authorized APK generation, canonical signing and delivery
+to their existing Drive folder. GitHub Actions, workflow creation/dispatch/rerun,
+key generation/replacement and debug-key fallback remain prohibited. GitHub Release
+publication is outside this delivery. App ID, data schema, source files and the
+canonical signing identity remain unchanged.
 
 `scripts/validate-pre-apk.sh` runs a dry-run graph followed by:
 
@@ -23,6 +24,15 @@ execution, including transitive tasks. Resource compilation and class/JAR tasks
 are permitted. `scripts/build-local.sh` now defaults to tests and lint rather
 than assembling an APK. Never call a no-argument build script assuming its
 historical defaults are still appropriate.
+
+**Release regression discovered on the delivered alpha1:** Kotlin/debug checks
+did not detect R8 stripping MediaPipe protobuf reflection fields and native Java
+entry points. `python3 scripts/test-mediapipe-r8.py` now reproduces the actual
+`platform_` crash before the fix and requires successful serialization/parse with
+the current keep rules. `assembleRelease` automatically runs
+`verifyReleaseRuntimeContracts` over the final DEX, exact mapping and original
+MediaPipe AARs. This structural gate must pass; it does not replace an actual
+optimized-APK device startup and both-model inference test.
 
 ## Implemented corrections to review
 
@@ -64,8 +74,9 @@ implemented paths; real footage and hardware acceptance remain separate.
 
 ## Mandatory next-stage device acceptance
 
-An APK and instrumentation APK are required for the following. They are deferred
-until APK creation is explicitly authorized; source compilation alone cannot pass.
+An APK and instrumentation APK are required for the following. APK creation is
+now authorized, but eligible Android hardware is still required; source compilation
+and host R8 execution alone cannot pass these device gates.
 
 | Study | Cases | Evidence needed |
 |---|---|---|

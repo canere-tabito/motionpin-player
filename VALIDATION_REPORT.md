@@ -1,6 +1,65 @@
 # Validation report
 
-## 現行：ダンサー追尾の根本修正・APK生成前検証（2026-10-16）
+## 現行：サムネイル・人物検出開始失敗の修正（2026-10-17）
+
+対象：`feat/motionpin-player`、`0.2.0-alpha2` / versionCode 3。
+開始HEAD：`df01d51782a90e4918ae2ed51886a4a03d10d85a`、未コミット変更なし。
+ユーザーから、MKV等のサムネイル不足と、全動画で人物検出開始時に
+`Field platform_ for F3.B not found`になる画面の報告を受けて修正しました。
+今回は**APK生成・正本署名・Drive保存が明示許可済み**です。GitHub ActionsとRelease公開は使用していません。
+
+### 確認した原因と変更
+
+- 旧サムネイルは`ContentResolver.loadThumbnail`の1経路のみ。providerが画像を返せないと終了し、動画自体から取得できませんでした。ローカルの読取専用descriptorから`MediaMetadataRetriever.getScaledFrameAtTime`へ切り替える経路を追加。黒い冒頭など低詳細画像では最大4時点を比較し、有効な候補を保持します。
+- 2 worker、8MiBのバイト単位LRU、最大512pxの要求上限（通常320×180）、providerへのCancellationSignal、キャンセル時の一時Bitmap解放を追加。ネイティブ処理中は枠を保持し、decodeとreleaseを競合させません。providerの協調timeoutは2秒、追加取得の打切り予算は5秒で、**1回のnative呼出しを強制中断できる保証ではありません**。
+- URI・revision・更新時刻・サイズ・回転等をキャッシュ識別に含め、権限や再関連付け時にComposeの旧画像を即時破棄。公開済みBitmapはLRUからの削除時にもrecycleしません。
+- 旧APKのmappingで`F3.B`を`MediaPipeLoggingProto.SystemInfo`と特定。実DEXから`platform_`を含む7 instance fieldsの消失を確認。実MediaPipe 1.1.0／protobuf 4.26.1を実R8 8.9.35で縮小・実行すると同じ例外を再現し、現行規則ではbuild→serialize→parseが成功しました。
+- JNIから呼ぶ`Packet.create`、`PacketListCallback.process`、`SerializedMessage`のフィールド、`MediaPipeException`の名前・コンストラクタにも欠落／変形を確認。必要なJNI境界とprotobuf fieldsを保持し、R8最適化は継続。全framework保持や包括的dontwarnは使用していません。
+- `assembleRelease`に実DEX／元AAR／mappingの契約検査を接続。具体的なcallback実装も検査します。エンジン読込時の`LinkageError`は既存の通知・解放経路へ渡します。
+
+applicationId、Room schema、正本署名鍵、元動画、通常再生、RIFE、追尾モデルは維持しています。
+MKVはコンテナであり、端末の抽出器／コーデックが対応しない動画のサムネイル取得を保証しません。
+
+### 実行結果
+
+| 検査 | 結果 | 根拠・範囲 |
+|---|---|---|
+| Debug／Release Kotlin、Androidテストコンパイル | PASS | 実Android全体。追加のMKV／MP4実デコードテスト2件を含む |
+| JVM単体テスト | PASS | 16 suite、119件、failure/error/skip各0。サムネイルのfallback、黒い冒頭、キャンセル解放、境界・キャッシュ識別16件を追加 |
+| 実R8／protobufホスト実行 | PASS | 旧規則は`platform_`欠落でexit 1、修正規則は45 bytesのserialize/parse成功。Android JNI実行の代替ではない |
+| DEX検査器の自己テスト | PASS | 12件。定義・型・整合性・継承callbackなど。旧配布APKを実際にFAIL判定 |
+| Release lint | PASS | 0 errors / 31 warnings。依存更新15、KTX提案13、既存singleton1、arm64限定1、kapt提案1 |
+| Releaseビルドと自動runtime契約ゲート | PASS | 元AARの154 messages中、保持55 classes／293 instance fields、JNI契約5件と実callback1件。署名後APKも再検査してPASS |
+| 正本署名・APK構造・モデル | PASS | 既存alpha1と証明書一致。署名／オフラインmanifest／全native 16KB ELF・ZIP配置／RIFE等26検査、Lite0/Lite2サイズ・hash・非圧縮もPASS |
+| 自作MP4／MKV検証素材 | PASS（ホストのみ） | 各4秒・320×180・H.264/12fps。先頭黒画像variance 0、1秒地点variance 4418.877。元素材hash一致。生成手順付き、Release APKへは含めない |
+| 実機サムネイル・最適化済みAPKで人物検出 | NOT_RUN | Android端末／エミュレータなし。実機での両モデル・MKV/MP4・更新インストールは確認が必要 |
+
+初回Releaseビルドではframework全体を保持したため、AARにない未使用のGraphTemplate／GraphProfiler等の参照でR8がFAIL。
+実JNI境界に保持規則を絞り、警告抑制を追加せず、再実行は`BUILD SUCCESSFUL`でした。
+前回のKotlinコンパイル・debug単体テスト・モデルhashだけでは、このRelease起動障害を検出できなかったことを記録します。
+
+再現コマンド：
+
+```sh
+scripts/build-local.sh compileDebugKotlin compileReleaseKotlin compileDebugAndroidTestKotlin testDebugUnitTest lintRelease assembleRelease
+python3 scripts/test-mediapipe-r8.py
+python3 scripts/verify-protobuf-apk.py --self-test
+```
+
+機械可読記録：[alpha2-fix-summary.json](docs/validation/alpha2-fix-summary.json)。
+詳細ログは`artifacts/alpha2/`と`artifacts/release-regression/`。
+署名済みAPKは71,152,769 bytes、SHA-256：
+`d6fae46243d27a5cc8d2def274ed7e8488ad463da876d063ef994c87b2d1ae58`。
+証明書SHA-256：`20446ba202bd4c0d2c665aa6b11f7f5c0127bb73ee38f27d64c10fabecfe0337`。
+[Drive納品APK](https://drive.google.com/file/d/1Oq_XBXq9RuNokJzT6uwJgjHRPCQOCfkQ/view?usp=drivesdk)：保存後に実ファイルを再取得し、サイズとSHA-256の一致を確認済み（PASS）。既存の共有設定は変更していません。
+
+実機では、まずalpha1から更新→問題のMKVを一覧表示→同じ動画の同じ時刻で人物選択→Lite2/Lite0切替を確認してください。
+4K60/HDR、長時間の熱・メモリ、全MKV codec、nativeの強制中断、実写追尾精度は今回も未測定です。
+サムネイルのBitmapは一覧用だけであり、元動画の再圧縮・SDR化・フレームレート変更は行いません。
+
+---
+
+## 過去：ダンサー追尾の根本修正・APK生成前検証（2026-10-16）
 
 対象：`feat/motionpin-player`、`0.2.0-alpha1` / versionCode 2 / `com.caneretabito.motionpin`。
 開始HEADは `cfc819794f9b811268398b617b63465b3caf9e29`、未コミット変更なし。

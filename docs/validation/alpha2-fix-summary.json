@@ -1,0 +1,132 @@
+{
+  "version_name": "0.2.0-alpha2",
+  "version_code": 3,
+  "baseline_commit": "df01d51782a90e4918ae2ed51886a4a03d10d85a",
+  "jvm_tests": {
+    "status": "PASS",
+    "suites": 16,
+    "tests": 119,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "new_thumbnail_tests": 16
+  },
+  "android_test_compilation": "PASS",
+  "android_device_execution": "NOT_RUN",
+  "lint": {
+    "status": "PASS",
+    "errors": 0,
+    "warnings": 31
+  },
+  "real_r8_protobuf_host_regression": {
+    "scope": "Real R8 classfile/protobuf host regression; NOT Android JNI/device execution",
+    "inputs": {
+      "tasks-core-1.1.0.aar": "8fd870589d83d4ec9df50043e6ab053d88442cb90b6410c990c93538b5a07a2c",
+      "protobuf-javalite-4.26.1.jar": "ae83d2b063988c4565462845269472ddc817117506b6e467a2c3222c96636829",
+      "builder-8.9.2.jar": "7dc1d36d12ee81300c5b1672aaae336d1c3cfe90a7b26b2b551389604150e53b"
+    },
+    "keepRulesSha256": "488c353826f17a157a33d38e6177457e1a4f6e4134d800642f16ad928d1ad6ff",
+    "r8Version": "R8 8.9.35 (build afec818d6658b003ba394e10107b7dfc565dd94b from go/r8bot (luci-r8-custom-ci-archive-0-stqp))",
+    "status": "PASS",
+    "baselineRegressionReproduced": true,
+    "runs": {
+      "baseline": {
+        "exitCode": 1,
+        "output": "Exception in thread \"main\" java.lang.RuntimeException: Field platform_ for a.f not found. Known fields are [public static final a.f a.f.e, public static volatile b.F a.f.f]\n\tat b.e0.a(SourceFile:384)\n\tat b.e0.a(SourceFile:264)\n\tat b.j0.a(SourceFile:30)\n\tat b.G.b(SourceFile:3)\n\tat MediaPipeProtoProbe.main(SourceFile:17)"
+      },
+      "fixed": {
+        "exitCode": 0,
+        "output": "PASS real SystemInfo build/serialize/parse; bytes=45"
+      }
+    }
+  },
+  "dex_gate": {
+    "status": "PASS",
+    "source_message_count": 154,
+    "checked_message_count": 55,
+    "checked_instance_field_count": 293,
+    "pruned_message_count": 99,
+    "native_java_checks": [
+      {
+        "dex_descriptor": "Lcom/google/mediapipe/framework/Packet;",
+        "status": "PASS",
+        "class_present": true,
+        "missing_methods": [],
+        "invalid_fields": {}
+      },
+      {
+        "dex_descriptor": "Lcom/google/mediapipe/framework/PacketListCallback;",
+        "status": "PASS",
+        "class_present": true,
+        "missing_methods": [],
+        "invalid_fields": {}
+      },
+      {
+        "dex_descriptor": "Lcom/google/mediapipe/framework/MediaPipeException;",
+        "status": "PASS",
+        "class_present": true,
+        "missing_methods": [],
+        "invalid_fields": {}
+      },
+      {
+        "dex_descriptor": "Lcom/google/mediapipe/framework/ProtoUtil$SerializedMessage;",
+        "status": "PASS",
+        "class_present": true,
+        "missing_methods": [],
+        "invalid_fields": {}
+      },
+      {
+        "dex_descriptor": "Lcom/google/mediapipe/framework/PacketCreator;",
+        "status": "PASS",
+        "class_present": true,
+        "missing_methods": [],
+        "invalid_fields": {}
+      }
+    ],
+    "packet_list_callback_implementations": [
+      {
+        "dex_descriptor": "LB1/c;",
+        "method_owner": "LB1/c;",
+        "method": "process(Ljava/util/List;)V",
+        "status": "PASS"
+      }
+    ]
+  },
+  "signed_apk": {
+    "sha256": "d6fae46243d27a5cc8d2def274ed7e8488ad463da876d063ef994c87b2d1ae58",
+    "size_bytes": 71152769,
+    "manifest": {
+      "application_id": "com.caneretabito.motionpin",
+      "version_code": 3,
+      "version_name": "0.2.0-alpha2",
+      "min_sdk": 29,
+      "target_sdk": 35,
+      "debuggable": false,
+      "allow_backup": false,
+      "permissions": [
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "com.caneretabito.motionpin.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+      ]
+    },
+    "signing_certificates_sha256": [
+      "20446ba202bd4c0d2c665aa6b11f7f5c0127bb73ee38f27d64c10fabecfe0337"
+    ]
+  },
+  "artifact_checks_passed": 26,
+  "test_fixture_packaged_in_release": false,
+  "tracking_model_hashes": "PASS",
+  "github_actions_used": false,
+  "source_video_modified": false,
+  "drive_delivery": {
+    "url": "https://drive.google.com/file/d/1Oq_XBXq9RuNokJzT6uwJgjHRPCQOCfkQ/view?usp=drivesdk",
+    "folder_id": "1pFzZA3r4lM0szBRdylpa7-LpIH0qeycu",
+    "readback_size_and_sha256": "PASS",
+    "shared": false
+  }
+}

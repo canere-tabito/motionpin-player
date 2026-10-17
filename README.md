@@ -13,6 +13,7 @@
 - 直前3秒のワンタップ区間ループ（元動画・AIキャッシュ双方）と解除時の再生復帰。
 - お気に入りシーンリール：複数動画の区間ピンを順番に再生し、並べ替え／シャッフル／リピート、設定JSONバックアップ対応。
 - 「動画」「ピン」「コレクション」。MediaStoreとローカルSAF、動画の検索／並べ替え、時刻・区間ピン、手動チャンネル。
+- 一覧サムネイルはOS提供画像を優先し、取得失敗・黒い冒頭では元動画の縮小フレームへ切り替え。MKVなども端末の抽出器・デコーダが対応する範囲で取得します。
 - Roomに内部UUIDと元動画のµs時刻を保存。明示JSONバックアップ、入力検査、競合検出、再インポートの重複防止、元動画の再関連付け。
 - 同梱RIFE v4.6をJNI／ncnn Vulkanから実行する区間補間。0.5×／0.25×、60fps出力、音声ミュート、元サイズのままストリーム処理。
 - AIの入力は明示的に確認できるBT.709／8bit SDRのみ。未知の色属性、HDR、10bit、動的HDR、RGB8へ保持できない信号は理由付きで停止。
@@ -53,10 +54,14 @@ HDR AIは成立していないため拒否します。P010／Main10能力の調�
 scripts/setup-native.sh
 scripts/setup-tracker-model.sh # Gradle preBuildからも実行・hash検証
 scripts/validate-pre-apk.sh # 両variant・AndroidテストのKotlinコンパイル、JVMテスト、release lint。APK生成なし
+python3 scripts/test-mediapipe-r8.py # 実R8で人物検出の旧不具合と修正後を実行比較
+python3 scripts/verify-protobuf-apk.py --self-test
 python3 scripts/evaluate-tracking.py --baseline cfc819794f9b811268398b617b63465b3caf9e29
 ```
 
-現在はAPK生成前の検証段階です。assemble/package・署名・公開は次回の明示的な指示まで実行しません。
+`0.2.0-alpha2`は、サムネイルの代替取得とRelease最適化による人物検出開始失敗を修正する開発版です。
+APK生成・正本署名・Drive保存はユーザーの明示指示に従います。GitHub Actionsは引き続き使用しません。
+`scripts/build-local.sh assembleRelease`は、生成したAPKのprotobuf/JNI契約検査も自動実行します。
 改修理由は [TRACKING_IMPLEMENTATION_NOTES.md](docs/TRACKING_IMPLEMENTATION_NOTES.md)、再現手順と残ゲートは [TRACKING_PRE_APK_QUALITY_GATE.md](docs/TRACKING_PRE_APK_QUALITY_GATE.md) を参照してください。
 
 releaseビルドにはdebug鍵へのフォールバックがありません。未署名APKはインストール／公開用ではありません。

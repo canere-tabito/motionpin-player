@@ -1,6 +1,6 @@
 # Requirement implementation and acceptance status
 
-Reviewed against [IMPLEMENTATION_REQUIREMENTS.md](IMPLEMENTATION_REQUIREMENTS.md) on 2026-10-16.
+Reviewed against [IMPLEMENTATION_REQUIREMENTS.md](IMPLEMENTATION_REQUIREMENTS.md) on 2026-10-17.
 This is a source inventory, not a declaration that all P0 requirements pass. The current Android
 implementation has not been exercised on an eligible physical device. Successful compilation,
 host inference, unit tests and APK inspection cannot establish 4K60 playback, Android Vulkan
@@ -11,6 +11,22 @@ or missing part is identified. `NOT IMPLEMENTED` means there is no functioning i
 of that part. Execution results belong in [VALIDATION_REPORT.md](../VALIDATION_REPORT.md), using
 `PASS`, `FAIL` or `NOT_RUN`; the device cases below are `NOT_RUN` until actual evidence is recorded.
 The test procedure is [DEVICE_VALIDATION.md](DEVICE_VALIDATION.md).
+
+## 0.2.0-alpha2 thumbnail and Release startup corrections (2026-10-17)
+
+- Library previews now fall back from provider thumbnails to bounded, scaled native
+  frame extraction. Low-detail/black lead-in frames trigger a few alternate samples;
+  cache identity and Compose reset follow the actual source/revision/availability.
+  Two workers and an 8MiB cache bound work and retained thumbnail memory. Native
+  calls cannot be force-cancelled; unsupported device codecs remain a limitation.
+- The reported all-video detector startup failure was reproduced with real R8 and
+  MediaPipe/protobuf classes. Release rules protect reflection fields and Java
+  entry points called from native code. `assembleRelease` now inspects the actual
+  optimized DEX, including concrete callback implementations.
+- JVM, host R8, final APK and device execution results are recorded separately in
+  [VALIDATION_REPORT.md](../VALIDATION_REPORT.md). MKV/MP4 device thumbnail tests and
+  optimized-APK inference still require eligible Android hardware. Source files,
+  normal playback, applicationId, database and canonical signing identity are unchanged.
 
 ## New viewer features added after the initial validation (source inventory, 2026-10-16)
 

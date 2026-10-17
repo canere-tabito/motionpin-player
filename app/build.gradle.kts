@@ -17,8 +17,8 @@ android {
         applicationId = "com.caneretabito.motionpin"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-alpha1"
+        versionCode = 3
+        versionName = "0.2.0-alpha2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild {
@@ -108,6 +108,28 @@ val prepareTrackerModel by tasks.registering(Exec::class) {
 tasks.named("preBuild") { dependsOn(prepareTrackerModel) }
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
     dependsOn(prepareTrackerModel)
+}
+
+// Kotlin compilation and debug tests cannot detect R8 removing fields/methods
+// accessed through protobuf reflection or MediaPipe JNI. Inspect the actual DEX.
+val verifyReleaseRuntimeContracts by tasks.registering(Exec::class) {
+    dependsOn("packageRelease")
+    doFirst {
+        val aars = configurations.getByName("releaseRuntimeClasspath")
+            .resolvedConfiguration.resolvedArtifacts.filter {
+                it.moduleVersion.id.group == "com.google.mediapipe" &&
+                    it.name in setOf("tasks-core", "tasks-vision") && it.extension == "aar"
+            }.map { it.file }.sortedBy { it.name }
+        check(aars.size == 2) { "Both MediaPipe AARs are required for the Release runtime contract gate" }
+        commandLine(listOf("python3", rootProject.file("scripts/verify-protobuf-apk.py").absolutePath,
+            "--apk", layout.buildDirectory.file("outputs/apk/release/app-release-unsigned.apk").get().asFile.absolutePath,
+            "--mapping", layout.buildDirectory.file("outputs/mapping/release/mapping.txt").get().asFile.absolutePath,
+            "--report", layout.buildDirectory.file("reports/release-runtime-contracts.json").get().asFile.absolutePath
+        ) + aars.flatMap { listOf("--aar", it.absolutePath) })
+    }
+}
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy(verifyReleaseRuntimeContracts)
 }
 
 // Inspect merged manifests, because a transitive AAR can reintroduce network

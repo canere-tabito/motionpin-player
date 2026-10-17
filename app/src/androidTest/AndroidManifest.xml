@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Test APK only. Serves two owned fixtures, never user media or app data. -->
+        <provider
+            android:name="com.caneretabito.motionpin.thumbnail.ThumbnailFixtureProvider"
+            android:authorities="com.caneretabito.motionpin.test.thumbnailfixtures"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+    </application>
+</manifest>
