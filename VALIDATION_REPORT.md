@@ -1,5 +1,26 @@
 # Validation report
 
+## 再生中のSDR映像色調整（2026-10-17、ソース実装・未配布）
+
+対象ブランチ：`feat/player-live-color-controls-20261017`。元コードは`feat/motionpin-player`。MKVカバー画像修正のドラフトPR #1とは独立し、別PRとしてレビューします。
+
+- Media3 1.6.1の`media3-effect`を追加し、ExoPlayerの`setVideoEffects`を`prepare()`前に初期化。ランタイムでBrightness/Contrast/HslAdjustment/RgbAdjustmentを切り替える。PlayerViewはSurfaceViewのまま、TextureViewへの変更や元動画のencodeは行わない。
+- パレットアイコン→透明scrimのbottom sheetで5スライダー、4プリセット、無調整表示への比較、リセット。操作は即時UI反映、GPU側は65ms debounce、設定保存は450ms debounce。既存のRoom `settings` にバージョン付き値を動画／ピンIDで別々に保存、バックアップも既存の設定配列に載る。ピン削除時にその設定も削除。
+- 元のMediaFormat transferが明示SDR、profileから8bitが確認できる場合だけ調整可。HDR・10bit・色属性不明は効果を適用せず、無調整再生する。8bitの判定不明なMKVは選べない場合がある。5エフェクトのGPU負荷に対する実機性能は未確認。別処理が必要な暗部／ハイライト個別補正は未実装。原画比較はピクセル一致保証ではない。
+- 4K60・HDR・AIキャッシュ・人物追尾の品質ゲートを通したとは主張しない。画質の安全確認なくHDR効果を有効化しない。source fileとRoom schema、applicationId、署名設定、versionCodeは変更していない。
+
+| 検査 | 状態 | 根拠 |
+|---|---|---|
+| 純Kotlinの設定値保存・復元／上下限・動画／ピン優先順位 | PASS（限定） | Kotlin CLIで`ColorGrade.kt`と同内容のコードを独立コンパイル・実行。設定往復・境界・不正値を検査。リポジトリのJVM JUnitテストそのものではない |
+| Kotlin + Android全体のdebug/releaseコンパイル、JVMテスト | NOT_RUN | 作業コンテナにAndroid SDK/Gradle Android依存物なし。別途Gradleで必須検証 |
+| 4K60再生のGPU負荷、カラー比較、HDR/10bit経路・途中切替、AI cache、ズーム／人物追尾 | NOT_RUN | 端末接続なし、物理デバイス未測定 |
+| APKビルド、正本鍵署名、再取得hash比較 | NOT_RUN | APK生成の前にAndroidビルド検証、ユーザー実機確認を優先。Actionsは使用しない |
+
+次工程：`./gradlew testDebugUnitTest compileDebugKotlin compileReleaseKotlin`（Actions不使用）、SDR 8bitのH.264/HEVC MP4/MKVで再生と実際の表示、性能、HDR動画を開いた際の無変換表示、画面回転、保存と復元、原画比較・高速スライダー操作を確認。失敗を見つけた場合はこのPRを修正してから正本APKを生成する。
+
+---
+
+
 ## 現行：サムネイル・人物検出開始失敗の修正（2026-10-17）
 
 対象：`feat/motionpin-player`、`0.2.0-alpha2` / versionCode 3。
