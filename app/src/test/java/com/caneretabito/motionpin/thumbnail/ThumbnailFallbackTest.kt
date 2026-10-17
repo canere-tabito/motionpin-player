@@ -10,12 +10,15 @@ import java.io.IOException
 class ThumbnailFallbackTest {
     private data class Image(val label: String, val detail: Float)
     private class Backend(
+        val embeddedRead: suspend () -> Image? = { null },
         val providerRead: suspend () -> Image? = { null },
         val frameRead: suspend (Long) -> Image? = { null },
     ) : ThumbnailBackend<Image> {
+        var embeddedCalls = 0
         var providerCalls = 0
         val frameTimes = mutableListOf<Long>()
         val discarded = mutableListOf<Image>()
+        override suspend fun embedded(): Image? { embeddedCalls++; return embeddedRead() }
         override suspend fun provider(): Image? { providerCalls++; return providerRead() }
         override suspend fun frame(timeUs: Long): Image? { frameTimes += timeUs; return frameRead(timeUs) }
         override fun score(image: Image) = image.detail
@@ -23,6 +26,34 @@ class ThumbnailFallbackTest {
     }
     private val request = ThumbnailRequest("video-id", "content://local/video.mkv", 1L,
         durationUs = 4_000_000L)
+
+    @Test fun originalCoverWinsOverSceneFrameRegardlessOfDetail() = runBlocking {
+        val cover = Image("Velta original cover", 0f)
+        val backend = Backend(embeddedRead = { cover },
+            providerRead = { error("Provider must not replace original cover") },
+            frameRead = { error("No seek after an original cover is found") })
+        assertSame(cover, chooseThumbnail(request, backend))
+        assertEquals(1, backend.embeddedCalls)
+        assertEquals(0, backend.providerCalls)
+        assertTrue(backend.frameTimes.isEmpty())
+        assertTrue(backend.discarded.isEmpty())
+    }
+
+    @Test fun unreadableCoverStillFallsBackToExistingProviderRoute() = runBlocking {
+        val provider = Image("provider frame", .15f)
+        val backend = Backend(embeddedRead = { throw IOException("Missing attachment") },
+            providerRead = { provider })
+        assertSame(provider, chooseThumbnail(request, backend))
+        assertEquals(1, backend.embeddedCalls)
+        assertEquals(1, backend.providerCalls)
+    }
+
+    @Test fun coverCancellationNeverAttemptsProvider() {
+        val backend = Backend(embeddedRead = { throw CancellationException("Scrolled away") })
+        assertThrows(CancellationException::class.java) { runBlocking { chooseThumbnail(request, backend) } }
+        assertEquals(0, backend.providerCalls)
+        assertTrue(backend.frameTimes.isEmpty())
+    }
 
     @Test fun usefulProviderImageAvoidsSecondDecoderAndTransfersOwnership() = runBlocking {
         val expected = Image("provider", .25f)
