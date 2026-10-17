@@ -31,6 +31,10 @@ object ColorGradeSettings {
     fun videoKey(videoId: String): String = "grade.video.$videoId"
     fun pinKey(pinId: String): String = "grade.pin.$pinId"
 
+    /** A missing pin override inherits this video's saved look. */
+    fun resolve(videoSaved: String?, pinSaved: String?): ColorGrade =
+        decode(pinSaved) ?: decode(videoSaved) ?: ColorGrade.ORIGINAL
+
     fun encode(grade: ColorGrade): String {
         require(grade.valid()) { "Invalid color adjustment" }
         return listOf("v1", grade.brightness, grade.contrast, grade.saturation,
