@@ -61,6 +61,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val fullscreen = MutableStateFlow(false)
     fun toggleFullscreen() { fullscreen.value = !fullscreen.value }
     val currentPin = MutableStateFlow<PinEntity?>(null)
+    val colorGrade = MutableStateFlow(ColorGrade.ORIGINAL)
+    val colorGradeBlockedReason = MutableStateFlow<String?>("動画の色属性を確認中です。")
+    val colorGradeCompare = MutableStateFlow(false)
+    private var currentGradeKey: String? = null
+    private var colorRenderJob: Job? = null
+    private val pendingGradeSaves = mutableMapOf<String, Job>()
     val inspection = MutableStateFlow<PlaybackInspection?>(null)
     val busy = MutableStateFlow<String?>(null)
     val message = MutableStateFlow<String?>(null)
@@ -251,6 +257,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun open(video: VideoEntity, pin: PinEntity?, preferAi: Boolean, sourcePosition: Long? = null, play: Boolean = true,
                      viewportOverride: VideoViewport? = null, loopOverride: Boolean? = null) {
         cancelPlaybackTransition()
+        colorRenderJob?.cancel()
+        colorGradeCompare.value = false
+        colorGradeBlockedReason.value = "動画の色属性を確認中です。"
         continueAfterTargetSelection = false
         resumeAfterTrackingLookahead = false
         openJob = viewModelScope.launch {
@@ -289,13 +298,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     cache.speedNumerator.toDouble() / cache.speedDenominator, cached = true)
                     else PlaybackTimeline(start, end)
                 val position = (sourcePosition ?: pin?.startUs ?: video.resumePositionUs).coerceIn(timeline.sourceStartUs, timeline.sourceEndUs - 1)
+                val newGradeKey = pin?.let { ColorGradeSettings.pinKey(it.id) }
+                    ?: ColorGradeSettings.videoKey(freshVideo.id)
+                val previouslyLoaded = currentVideo.value?.id == freshVideo.id &&
+                    currentPin.value?.id == pin?.id && currentGradeKey == newGradeKey
+                val savedGrade = if (previouslyLoaded) colorGrade.value else {
+                    val pinned = pin?.let { repository.getSetting(ColorGradeSettings.pinKey(it.id)) }
+                    val defaultGrade = repository.getSetting(ColorGradeSettings.videoKey(freshVideo.id))
+                    ColorGradeSettings.resolve(defaultGrade, pinned)
+                }
+                val gradeBlock = details.colorGradeBlockedReason
                 currentCoroutineContext().ensureActive()
                 busy.value = "AI処理を安全な境界で待機させています…"
                 ai.awaitPlaybackReady()
                 player.open(cache?.outputPath?.let { Uri.fromFile(File(it)) } ?: sourceUri, checkedVideo.durationUs, timeline, position,
                     pin?.speed ?: defaultSpeed, loopOverride ?: pin?.loop ?: false,
                     viewportOverride ?: pin?.let { VideoViewport(it.zoomScale, it.zoomCenterX, it.zoomCenterY) } ?: VideoViewport(),
-                    pin?.let { it.audioMode == "muted" } ?: defaultMuted, details.aspect, play)
+                    pin?.let { it.audioMode == "muted" } ?: defaultMuted, details.aspect, play,
+                    colorGrade = savedGrade, gradePermitted = gradeBlock == null)
+                colorGrade.value = savedGrade
+                colorGradeBlockedReason.value = gradeBlock
+                currentGradeKey = newGradeKey
                 currentVideo.value = freshVideo
                 currentPin.value = pin
                 repository.updateVideo(freshVideo.copy(lastPlayedAt = System.currentTimeMillis(), resumePositionUs = position))
@@ -328,6 +351,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closePlayer() {
+        colorRenderJob?.cancel()
+        player.compareOriginal(false)
+        colorGradeCompare.value = false
+        colorGradeBlockedReason.value = "動画の色属性を確認中です。"
+        currentGradeKey = null
         stopReel()
         stopDancerTracking(false)
         fullscreen.value = false
@@ -357,6 +385,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             player.exo.play()
         }
     }
+    /**
+     * A 65ms render debounce limits GPU program rebuilds during rapid slider drags.
+     * Persistence is independently keyed, so switching videos never cancels another
+     * video's pending write. All video changes remain display-only.
+     */
+    fun setColorGrade(next: ColorGrade) {
+        val key = currentGradeKey ?: return
+        if (colorGradeBlockedReason.value != null || !next.valid() || currentVideo.value == null) return
+        if (next == colorGrade.value) return
+        colorGrade.value = next
+        colorRenderJob?.cancel()
+        colorRenderJob = viewModelScope.launch {
+            delay(65)
+            if (currentGradeKey == key && colorGradeBlockedReason.value == null)
+                player.setColorGrade(next)
+        }
+        pendingGradeSaves.remove(key)?.cancel()
+        pendingGradeSaves[key] = viewModelScope.launch {
+            try {
+                delay(450)
+                repository.setSetting(key, ColorGradeSettings.encode(next))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                message.value = "色調整設定を保存できませんでした。${error.message ?: ""}"
+            } finally {
+                // Removed only if the completing job is still the tracked one.
+                if (pendingGradeSaves[key] == currentCoroutineContext()[Job])
+                    pendingGradeSaves.remove(key)
+            }
+        }
+    }
+
+    fun compareColorOriginal(show: Boolean) {
+        if (colorGradeBlockedReason.value != null || currentVideo.value == null) return
+        colorGradeCompare.value = show
+        // Cancel pending GPU updates while showing the unprocessed original.
+        colorRenderJob?.cancel()
+        if (!show) player.setColorGrade(colorGrade.value)
+        player.compareOriginal(show)
+    }
+
+    fun saveColorGradeAsVideoDefault() {
+        val video = currentVideo.value ?: return
+        if (colorGradeBlockedReason.value != null) return
+        val value = ColorGradeSettings.encode(colorGrade.value)
+        operation {
+            repository.setSetting(ColorGradeSettings.videoKey(video.id), value)
+            message.value = "この動画の基本色調整として保存しました。"
+        }
+    }
+
     fun setFill(fill: Boolean) { player.setFill(fill); operation { repository.setSetting("fill", fill.toString()) } }
     fun setSpeed(speed: Float) { defaultSpeed = speed; player.setSpeed(speed); operation { repository.setSetting("playbackSpeed", speed.toString()) } }
     fun setMuted(muted: Boolean) { defaultMuted = muted; player.setMuted(muted); operation { repository.setSetting("muted", muted.toString()) } }
@@ -381,12 +461,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun savePoint() {
         val video = currentVideo.value ?: return
         val state = player.state.value
+        val savedGrade = colorGrade.value
         val sourcePosition = player.liveSourcePositionUs()
         operation {
-            repository.savePin(PinEntity(videoId = video.id, startUs = sourcePosition.coerceIn(0, video.durationUs - 1),
+            val newPin = PinEntity(videoId = video.id, startUs = sourcePosition.coerceIn(0, video.durationUs - 1),
                 title = "${formatTimestamp(sourcePosition)} の瞬間", speedNumerator = speedFraction(state.requestedSpeed).first,
                 speedDenominator = speedFraction(state.requestedSpeed).second, loop = state.loop, zoomScale = state.viewport.zoom,
-                zoomCenterX = state.viewport.centerX, zoomCenterY = state.viewport.centerY, audioMode = if (state.muted) "muted" else "original"))
+                zoomCenterX = state.viewport.centerX, zoomCenterY = state.viewport.centerY, audioMode = if (state.muted) "muted" else "original")
+            repository.savePin(newPin)
+            repository.setSetting(ColorGradeSettings.pinKey(newPin.id), ColorGradeSettings.encode(savedGrade))
             message.value = "再生を続けながらピンを保存しました。"
         }
     }
@@ -497,6 +580,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val old = repository.getPin(pin.id)
         val changedAiInputs = old != null && (old.startUs != pin.startUs || old.endUs != pin.endUs || old.speedNumerator != pin.speedNumerator || old.speedDenominator != pin.speedDenominator)
         repository.savePin(pin.copy(updatedAt = System.currentTimeMillis(), aiJobId = if (changedAiInputs) null else pin.aiJobId))
+        if (old == null && currentVideo.value?.id == pin.videoId)
+            repository.setSetting(ColorGradeSettings.pinKey(pin.id), ColorGradeSettings.encode(colorGrade.value))
         editor.value = null
         message.value = "ピンを保存しました。"
     }

@@ -55,6 +55,10 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
     private var uri: Uri? = null
     private var sourceFullDurationUs = 1L
     private var temporarySpeed = false
+    private var gradingPermitted = false
+    private var gradingPipelineInitialized = false
+    private var colorGrade = ColorGrade.ORIGINAL
+    private var comparingOriginal = false
     private data class ReplayRestore(val uri: Uri, val timeline: PlaybackTimeline,
         val positionUs: Long, val durationUs: Long, val speed: Float, val loop: Boolean,
         val viewport: VideoViewport, val muted: Boolean, val aspect: Float)
@@ -104,13 +108,26 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
 
     fun open(uri: Uri, fullDurationUs: Long, timeline: PlaybackTimeline, positionUs: Long, speed: Float,
              loop: Boolean, viewport: VideoViewport, muted: Boolean, aspect: Float, play: Boolean = true,
-             clipMediaStartUs: Long? = null, clipMediaEndUs: Long? = null) {
+             clipMediaStartUs: Long? = null, clipMediaEndUs: Long? = null,
+             colorGrade: ColorGrade = ColorGrade.ORIGINAL, gradePermitted: Boolean = false) {
         timelineRevision++
         replayRestore = null
         this.uri = uri
         this.timeline = timeline
         sourceFullDurationUs = fullDurationUs
         temporarySpeed = false
+        // Media3 requires the effects pipeline to be configured BEFORE prepare(), even
+        // when the user starts on the neutral sliders. No TextureView or re-encoding.
+        gradingPermitted = gradePermitted
+        this.colorGrade = if (gradePermitted && colorGrade.valid()) colorGrade else ColorGrade.ORIGINAL
+        comparingOriginal = false
+        if (gradePermitted) {
+            exo.setVideoEffects(ColorGradeEffects.create(this.colorGrade))
+            gradingPipelineInitialized = true
+        } else if (gradingPipelineInitialized) {
+            // A previous SDR session must never leave a color transform on an HDR/unknown video.
+            exo.setVideoEffects(emptyList())
+        }
         val item = MediaItem.fromUri(uri)
         val source = sourceFactory.createMediaSource(item)
         // Loop boundaries belong to the media source; the UI ticker never implements looping.
@@ -138,7 +155,8 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         replayRestore?.let { old ->
             replayRestore = null
             open(old.uri, old.durationUs, old.timeline, old.positionUs, old.speed, old.loop,
-                old.viewport, old.muted, old.aspect, play = true)
+                old.viewport, old.muted, old.aspect, play = true,
+                colorGrade = colorGrade, gradePermitted = gradingPermitted)
             return false
         }
         val source = uri ?: return false
@@ -154,7 +172,8 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         val mediaStart = if (activeTimeline.cached) activeTimeline.toPlayerUs(start) else null
         val mediaEnd = if (activeTimeline.cached) activeTimeline.toPlayerUs(end) + 1L else null
         open(source, sourceFullDurationUs, loopTimeline, start, old.requestedSpeed, true, old.viewport,
-            old.muted, old.aspect, play = true, clipMediaStartUs = mediaStart, clipMediaEndUs = mediaEnd)
+            old.muted, old.aspect, play = true, clipMediaStartUs = mediaStart, clipMediaEndUs = mediaEnd,
+            colorGrade = colorGrade, gradePermitted = gradingPermitted)
         replayRestore = restore
         update { copy(replay = true) }
         return true
@@ -199,6 +218,22 @@ class RetainedPlayer(context: Context, scope: CoroutineScope) {
         temporarySpeed = active
         exo.playbackParameters = PlaybackParameters(if (active) .5f else mutable.value.requestedSpeed, 1f)
     }
+    /** Non-destructive SDR display adjustment. Call on the player's application looper. */
+    fun setColorGrade(grade: ColorGrade): Boolean {
+        if (!gradingPermitted || !grade.valid()) return false
+        if (colorGrade == grade) return true
+        colorGrade = grade
+        if (!comparingOriginal) exo.setVideoEffects(ColorGradeEffects.create(grade))
+        return true
+    }
+
+    /** No-adjustment comparison; this is not a bit-exact pixel identity claim. */
+    fun compareOriginal(active: Boolean) {
+        if (!gradingPermitted || active == comparingOriginal) return
+        comparingOriginal = active
+        exo.setVideoEffects(if (active) emptyList() else ColorGradeEffects.create(colorGrade))
+    }
+
     fun setMuted(muted: Boolean) { update { copy(muted = muted || cached) }; exo.volume = if (mutable.value.muted) 0f else 1f }
     fun setLoop(loop: Boolean) { exo.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF; update { copy(loop = loop) } }
     fun setViewport(viewport: VideoViewport) { update { copy(viewport = viewport.bounded()) } }
